@@ -2,6 +2,13 @@
 
 A sophisticated AI-powered tour guide application that provides real-time travel assistance through voice interactions, featuring 3D audio visualizations, location-aware recommendations, and intelligent bookmark management.
 
+
+### Watch the TourGuide AI Application Documentary Video
+
+[![chatbot](https://github.com/user-attachments/assets/805e9b0d-fa69-40ed-a6e2-35cfbcaa2572)](https://www.youtube.com/watch?v=XU2K9PIML48)
+
+### The TourGuide AI is deployed on Railway.app :  [TourGuide AI](https://frontend-tour-agent-guide-production.up.railway.app/)
+
 ## 🚀 Features
 
 - **Voice-First Interface**: Natural voice conversations with Google Gemini Live API
