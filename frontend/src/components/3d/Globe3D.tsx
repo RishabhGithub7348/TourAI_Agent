@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useMemo } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Sphere, MeshDistortMaterial, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -30,6 +30,16 @@ function AnimatedGlobe() {
 }
 
 export default function Globe3D() {
+  // Generate stable particle positions based on index
+  const particles = useMemo(() => {
+    return [...Array(20)].map((_, i) => ({
+      left: `${(i * 17 + 13) % 100}%`,
+      top: `${(i * 23 + 7) % 100}%`,
+      animationDelay: `${(i * 0.3) % 6}s`,
+      animationDuration: `${6 + (i * 0.2) % 4}s`,
+    }))
+  }, [])
+
   return (
     <div className="w-full h-[400px] relative">
       <Canvas camera={{ position: [0, 0, 3] }}>
@@ -47,15 +57,15 @@ export default function Globe3D() {
       
       {/* Floating particles */}
       <div className="absolute inset-0 pointer-events-none">
-        {[...Array(20)].map((_, i) => (
+        {particles.map((particle, i) => (
           <div
             key={i}
             className="absolute w-1 h-1 bg-blue-400 rounded-full animate-float"
             style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 6}s`,
-              animationDuration: `${6 + Math.random() * 4}s`,
+              left: particle.left,
+              top: particle.top,
+              animationDelay: particle.animationDelay,
+              animationDuration: particle.animationDuration,
             }}
           />
         ))}

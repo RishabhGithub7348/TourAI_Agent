@@ -31,8 +31,8 @@ export class GoogleMapsService {
 
       console.log(`🔑 Google Maps API key found: ${this.API_KEY.substring(0, 10)}...`);
 
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${this.API_KEY}`;
-      console.log(`🌐 Making request to: ${url.substring(0, 100)}...`);
+      const url = `/api/google-maps/geocode?lat=${latitude}&lng=${longitude}`;
+      console.log(`🌐 Making request to: ${url}`);
       
       const response = await fetch(url);
       console.log(`📡 Response status: ${response.status} ${response.statusText}`);
@@ -90,6 +90,7 @@ export class GoogleMapsService {
   /**
    * Parse Google Maps address components into structured data
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static parseAddressComponents(components: any[], fullAddress: string = ''): any {
     console.log(`🔧 Parsing ${components?.length || 0} address components...`);
     
@@ -194,6 +195,7 @@ export class GoogleMapsService {
   /**
    * Format location data specifically for AI tour guide context
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static formatForAI(details: any, fullAddress: string): string {
     console.log(`🤖 Formatting location for AI with details:`, details);
     console.log(`📍 Full address provided: ${fullAddress}`);
@@ -256,8 +258,8 @@ export class GoogleMapsService {
         return [];
       }
 
-      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&radius=${radius}&type=${type}&key=${this.API_KEY}`;
-      console.log(`🌐 Places API request: ${url.substring(0, 120)}...`);
+      const url = `/api/google-maps/places?lat=${latitude}&lng=${longitude}&radius=${radius}&type=${type}`;
+      console.log(`🌐 Places API request: ${url}`);
       
       const response = await fetch(url);
       const data = await response.json();
@@ -275,6 +277,7 @@ export class GoogleMapsService {
 
       const places = data.results
         .slice(0, 5) // Top 5 nearby places
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((place: any) => place.name)
         .filter(Boolean);
 
