@@ -21,7 +21,9 @@
       "Bash(npm run start:dev:*)",
       "Bash(node:*)",
       "WebSearch(*)",
-      "WebFetch(*)"
+      "WebFetch(*)",
+      "Bash(ls:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

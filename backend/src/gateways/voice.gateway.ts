@@ -21,6 +21,7 @@ interface SessionData {
   sessionId: string;
   userId: string;
   location?: string;
+  language?: string;
   geminiSession: any;
   currentConversation: ConversationMessage[];
   hasUserAudio: boolean;
@@ -73,11 +74,11 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`Client connected: ${client.id}`);
     
     const sessionId = uuidv4();
-    const userId = this.memoryService.getUserId(sessionId);
+    // We'll set userId later when we receive the setup message
     
     const sessionData: SessionData = {
       sessionId,
-      userId,
+      userId: 'pending', // Will be updated in setup
       geminiSession: null, // Will be created on-demand
       currentConversation: [],
       hasUserAudio: false,
@@ -95,7 +96,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Just send connection confirmation, no immediate session creation
     client.emit('connected', { 
       sessionId, 
-      userId,
+      userId: 'pending',
       status: 'ready_for_interaction' // Indicates session not created yet
     });
   }
@@ -157,6 +158,18 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const config = data.setup || {};
       
+      // Set user ID from frontend (Clerk user ID)
+      if (config.userId) {
+        sessionData.userId = config.userId;
+        this.logger.log(`✅ User ID set for client ${client.id}: ${config.userId}`);
+        console.log(`📋 User ID received from frontend: ${config.userId}`);
+      } else {
+        // Fallback to default user ID if not provided
+        sessionData.userId = this.memoryService.getUserId(sessionData.sessionId);
+        this.logger.log(`⚠️ No user ID provided, using fallback: ${sessionData.userId}`);
+        console.log(`⚠️ No user ID from frontend, using fallback: ${sessionData.userId}`);
+      }
+      
       // Store user location if provided (but don't create session yet)
       if (config.location) {
         sessionData.location = config.location;
@@ -168,6 +181,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('setup_complete', { 
         status: 'waiting_for_interaction', 
         location: config.location,
+        userId: sessionData.userId,
         message: 'Ready to start. Click the audio button to begin conversation.'
       });
 
@@ -202,6 +216,11 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.logger.log(`🌍 Location received for client ${client.id}: ${sessionData.location}`);
       }
 
+      // Store language preference if provided
+      const language = data.language || 'en-US';
+      sessionData.language = language;
+      this.logger.log(`🗣️ Language preference for client ${client.id}: ${language}`);
+
       // Check if session already exists or is being created
       if (sessionData.geminiSession) {
         client.emit('interaction_started', { status: 'already_active' });
@@ -226,10 +245,11 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      // Now create the Gemini session with location context
+      // Now create the Gemini session with location context and language
       const enhancedConfig = {
         responseModalities: ['AUDIO'],
-        locationContext: sessionData.location // Pass simplified location
+        locationContext: sessionData.location, // Pass simplified location
+        language: language // Pass language preference
       };
       
       const messageHandler = (data: any) => {
@@ -856,7 +876,8 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const enhancedConfig = {
         responseModalities: ['AUDIO'],
-        locationContext: sessionData.location // Include location if available
+        locationContext: sessionData.location, // Include location if available
+        language: sessionData.language || 'en-US' // Use stored language or default
       };
       
       const messageHandler = (data: any) => {

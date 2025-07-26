@@ -5,10 +5,22 @@ export declare class MemoryService {
     private readonly logger;
     private memory;
     private readonly FIXED_USER_ID;
+    private readonly BOOKMARKS_DIR;
     constructor(configService: AppConfigService);
+    private ensureBookmarksDirectory;
     getUserId(sessionId: string): string;
     addToMemory(messages: ConversationMessage[], userId: string, metadata?: any): Promise<string | null>;
     addToMemoryAsync(messages: ConversationMessage[], userId: string, metadata?: any): void;
+    addBookmark(bookmarkData: {
+        title: string;
+        description: string;
+        location?: string;
+        category?: string;
+        url?: string;
+    }, userId: string): Promise<string | null>;
+    getBookmarks(userId: string): Promise<MemoryResult[]>;
+    private addBookmarkToFile;
+    private getBookmarksFromFile;
     queryMemory(query: string, userId: string): Promise<MemoryResult[]>;
     getMemoryQueryTool(): {
         function_declarations: {

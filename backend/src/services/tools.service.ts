@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AppConfigService } from '../config/config.service';
+import { MemoryService } from './memory.service';
 import { Client } from '@googlemaps/google-maps-services-js';
 import axios from 'axios';
 
@@ -8,7 +9,10 @@ export class ToolsService {
   private readonly logger = new Logger(ToolsService.name);
   private readonly googleMapsClient: Client;
 
-  constructor(private configService: AppConfigService) {
+  constructor(
+    private configService: AppConfigService,
+    private memoryService: MemoryService
+  ) {
     this.googleMapsClient = new Client({});
   }
 
@@ -327,6 +331,189 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
     return response;
   }
 
+  // Save any interesting content as bookmark
+  async saveBookmark(
+    content: string, 
+    type?: string, 
+    context?: string,
+    userId?: string
+  ): Promise<string> {
+    try {
+      console.log('📚 ToolsService - Saving bookmark:', { content, type, context, userId });
+      
+      // Determine the type of content being saved
+      const contentType = type || this.determineContentType(content);
+      
+      const bookmarkData = {
+        title: this.extractTitle(content, contentType),
+        description: content.trim(),
+        location: this.extractLocation(content),
+        category: contentType,
+        url: ''
+      };
+
+      const finalUserId = userId || 'test_user_123';
+      
+      console.log('📚 ToolsService - Using userId for bookmark:', finalUserId);
+      console.log('📚 ToolsService - Bookmark data to save:', bookmarkData);
+      
+      const bookmarkId = await this.memoryService.addBookmark(bookmarkData, finalUserId);
+      
+      if (bookmarkId) {
+        const successMessage = `✅ Saved to your bookmarks! I've saved this ${contentType} so you can remember it later.`;
+        console.log('✅ ToolsService - Bookmark saved with ID:', bookmarkId);
+        return this.formatTourGuideResponse(
+          '📚 Bookmark Saved',
+          successMessage,
+          ['Say "show my bookmarks" to see all your saved items', 'I can save any interesting stories, places, food, or memories you want to remember']
+        );
+      } else {
+        const errorMessage = `❌ Sorry, I couldn't save that to your bookmarks. Please try again.`;
+        console.error('❌ ToolsService - Bookmark save failed');
+        return this.formatTourGuideResponse(
+          '❌ Save Failed',
+          errorMessage,
+          ['Check your internet connection', 'Try rephrasing what you want to save']
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Error saving bookmark: ${error.message}`);
+      console.error('❌ ToolsService - Bookmark save error:', error);
+      return `❌ Failed to save bookmark: ${error.message}`;
+    }
+  }
+
+  // Helper function to determine content type
+  private determineContentType(content: string): string {
+    const lowerContent = content.toLowerCase();
+    
+    if (lowerContent.includes('restaurant') || lowerContent.includes('food') || lowerContent.includes('dish') || lowerContent.includes('cuisine')) {
+      return 'food';
+    } else if (lowerContent.includes('museum') || lowerContent.includes('attraction') || lowerContent.includes('temple') || lowerContent.includes('park')) {
+      return 'place';
+    } else if (lowerContent.includes('story') || lowerContent.includes('experience') || lowerContent.includes('memory')) {
+      return 'memory';
+    } else if (lowerContent.includes('tip') || lowerContent.includes('advice') || lowerContent.includes('recommend')) {
+      return 'tip';
+    } else if (lowerContent.includes('hotel') || lowerContent.includes('accommodation')) {
+      return 'accommodation';
+    } else {
+      return 'general';
+    }
+  }
+
+  // Helper function to extract a short title from content
+  private extractTitle(content: string, type: string): string {
+    const words = content.split(' ');
+    if (words.length <= 8) {
+      return content;
+    }
+    
+    // Try to find a good title based on content type
+    if (type === 'food') {
+      const foodMatch = content.match(/(?:restaurant|dish|cuisine|food)\s+[\w\s]{1,30}/i);
+      if (foodMatch) return foodMatch[0];
+    } else if (type === 'place') {
+      const placeMatch = content.match(/(?:museum|temple|park|attraction)\s+[\w\s]{1,30}/i);
+      if (placeMatch) return placeMatch[0];
+    }
+    
+    // Default: take first 8 words
+    return words.slice(0, 8).join(' ') + '...';
+  }
+
+  // Helper function to extract location if mentioned
+  private extractLocation(content: string): string {
+    const locationMatch = content.match(/(?:in|at|near)\s+([\w\s]{2,30})(?:\s|$|,|\.)/i);
+    return locationMatch ? locationMatch[1].trim() : '';
+  }
+
+  // Get user bookmarks - shows all types of saved content
+  async getBookmarks(userId?: string): Promise<string> {
+    try {
+      const finalUserId = userId || 'test_user_123';
+      console.log('📚 ToolsService - Getting bookmarks for user:', finalUserId);
+      
+      const bookmarks = await this.memoryService.getBookmarks(finalUserId);
+      
+      if (bookmarks.length === 0) {
+        return this.formatTourGuideResponse(
+          '📚 Your Saved Items',
+          'You haven\'t saved anything yet! During our conversations, whenever you find something interesting - a place, food recommendation, story, or memory - just say "save this" and I\'ll bookmark it for you.',
+          ['Try saying "save this" when I mention something interesting', 'I can save places, food recommendations, stories, tips, or any memories you want to keep']
+        );
+      }
+
+      // Group bookmarks by category
+      const bookmarksByCategory = bookmarks.reduce((acc, bookmark) => {
+        const memoryText = bookmark.memory;
+        const titleMatch = memoryText.match(/User saved bookmark: "([^"]+)"/);
+        const title = titleMatch ? titleMatch[1] : 'Untitled';
+        
+        const descMatch = memoryText.match(/" - ([^(]+)/);
+        const description = descMatch ? descMatch[1].trim() : 'No description';
+        
+        const locationMatch = memoryText.match(/\(Location: ([^)]+)\)/);
+        const location = locationMatch ? locationMatch[1] : '';
+        
+        // Determine category from the saved content
+        const category = this.determineContentType(description);
+        
+        if (!acc[category]) {
+          acc[category] = [];
+        }
+        
+        acc[category].push({
+          title,
+          description,
+          location
+        });
+        
+        return acc;
+      }, {} as Record<string, any[]>);
+
+      // Format bookmarks by category with emojis
+      const categoryEmojis = {
+        food: '🍽️',
+        place: '📍',
+        memory: '💭',
+        tip: '💡',
+        accommodation: '🏨',
+        general: '📝'
+      };
+
+      let content = `You have ${bookmarks.length} saved item${bookmarks.length === 1 ? '' : 's'}:\n\n`;
+      
+      Object.entries(bookmarksByCategory).forEach(([category, items]) => {
+        const emoji = categoryEmojis[category] || '📝';
+        const categoryName = category.charAt(0).toUpperCase() + category.slice(1);
+        
+        content += `${emoji} **${categoryName}${items.length > 1 ? 's' : ''}** (${items.length})\n`;
+        
+        items.forEach((item, index) => {
+          const locationText = item.location ? ` 📍 ${item.location}` : '';
+          content += `   ${index + 1}. ${item.title}${locationText}\n`;
+          if (item.description !== item.title) {
+            content += `      ${item.description.substring(0, 100)}${item.description.length > 100 ? '...' : ''}\n`;
+          }
+        });
+        content += '\n';
+      });
+      
+      console.log('✅ ToolsService - Retrieved bookmarks:', bookmarks.length);
+      
+      return this.formatTourGuideResponse(
+        '📚 Your Saved Collection',
+        content,
+        ['Say "save this" whenever I mention something you want to remember', 'I can save any type of content - places, food, stories, tips, or memories']
+      );
+    } catch (error) {
+      this.logger.error(`Error getting bookmarks: ${error.message}`);
+      console.error('❌ ToolsService - Get bookmarks error:', error);
+      return `❌ Failed to retrieve bookmarks: ${error.message}`;
+    }
+  }
+
   // Get enhanced tour guide tools configuration for Gemini
   getTourGuideTools() {
     return {
@@ -408,16 +595,49 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
             required: ['from', 'to'],
           },
         },
+        {
+          name: 'save_bookmark',
+          description: 'Save any interesting content from the conversation as a bookmark - places, food recommendations, stories, memories, tips, or any other content the user wants to remember',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              content: {
+                type: 'STRING',
+                description: 'The content to save - can be about places, food, stories, memories, tips, or any interesting information',
+              },
+              type: {
+                type: 'STRING',
+                description: 'Type of content: food, place, memory, tip, accommodation, or general (optional)',
+              },
+              context: {
+                type: 'STRING',
+                description: 'Additional context about why this is being saved (optional)',
+              },
+            },
+            required: ['content'],
+          },
+        },
+        {
+          name: 'get_bookmarks',
+          description: 'Retrieve all saved bookmarks for the user',
+          parameters: {
+            type: 'OBJECT',
+            properties: {},
+            required: [],
+          },
+        },
       ],
     };
   }
 
   // Handle tour guide function calls
-  async handleTourGuideFunction(functionCall: any): Promise<any> {
+  async handleTourGuideFunction(functionCall: any, userId?: string): Promise<any> {
     const { name, args, id: callId } = functionCall;
 
     try {
       let result: string;
+      
+      console.log(`🔧 ToolsService - Handling function: ${name} with args:`, args);
 
       switch (name) {
         case 'get_nearby_attractions':
@@ -432,10 +652,23 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
         case 'get_transportation_options':
           result = await this.getTransportationOptions(args.from, args.to);
           break;
+        case 'save_bookmark':
+          result = await this.saveBookmark(
+            args.content, 
+            args.type, 
+            args.context,
+            userId
+          );
+          break;
+        case 'get_bookmarks':
+          result = await this.getBookmarks(userId);
+          break;
         default:
           result = `Unknown function: ${name}`;
       }
 
+      console.log(`✅ ToolsService - Function ${name} completed successfully`);
+      
       return {
         id: callId,
         name,
@@ -443,6 +676,7 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
       };
     } catch (error) {
       this.logger.error(`Error in tour guide function ${name}: ${error.message}`);
+      console.error(`❌ ToolsService - Function ${name} error:`, error);
       return {
         id: callId,
         name,

@@ -5,6 +5,7 @@ import { GeminiService } from './services/gemini.service';
 import { MemoryService } from './services/memory.service';
 import { ToolsService } from './services/tools.service';
 import { AppConfigService } from './config/config.service';
+import { TestController } from './controllers/test.controller';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AppConfigService } from './config/config.service';
       envFilePath: '.env',
     }),
   ],
+  controllers: [TestController],
   providers: [
     AppConfigService,
     MemoryService,

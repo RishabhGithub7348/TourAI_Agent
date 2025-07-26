@@ -30,8 +30,81 @@ let GeminiService = GeminiService_1 = class GeminiService {
     getDefaultTools() {
         return [
             { googleSearch: {} },
-            { codeExecution: {} }
+            { codeExecution: {} },
+            ...this.toolsService.getTourGuideTools().function_declarations.map(func => ({
+                functionDeclarations: [func]
+            }))
         ];
+    }
+    getVoiceForLanguage(languageCode) {
+        const voiceMap = {
+            'en-US': 'Charon',
+            'en-GB': 'Aiden',
+            'en-AU': 'Stella',
+            'en-IN': 'Aoede',
+            'es-ES': 'Fenix',
+            'es-US': 'Fenix',
+            'fr-FR': 'Nouvelle',
+            'fr-CA': 'Nouvelle',
+            'de-DE': 'Galia',
+            'it-IT': 'Gioia',
+            'pt-BR': 'Verde',
+            'ja-JP': 'Yu',
+            'ko-KR': 'Grover',
+            'cmn-CN': 'Grover',
+            'hi-IN': 'Kore',
+            'ar-XA': 'Iris',
+            'ru-RU': 'Luna',
+            'vi-VN': 'Zari',
+            'th-TH': 'Zari',
+            'tr-TR': 'Zari',
+            'nl-NL': 'Orion',
+            'pl-PL': 'Luna',
+            'id-ID': 'Zari',
+            'bn-IN': 'Kore',
+            'gu-IN': 'Kore',
+            'kn-IN': 'Kore',
+            'ml-IN': 'Kore',
+            'mr-IN': 'Kore',
+            'ta-IN': 'Kore',
+            'te-IN': 'Kore'
+        };
+        return voiceMap[languageCode] || 'Charon';
+    }
+    getLanguageName(languageCode) {
+        const languageNames = {
+            'en-US': 'English (US)',
+            'en-GB': 'English (UK)',
+            'en-AU': 'English (Australia)',
+            'en-IN': 'English (India)',
+            'es-ES': 'Spanish (Spain)',
+            'es-US': 'Spanish (US)',
+            'fr-FR': 'French (France)',
+            'fr-CA': 'French (Canada)',
+            'de-DE': 'German',
+            'it-IT': 'Italian',
+            'pt-BR': 'Portuguese (Brazil)',
+            'ja-JP': 'Japanese',
+            'ko-KR': 'Korean',
+            'cmn-CN': 'Mandarin Chinese',
+            'hi-IN': 'Hindi',
+            'ar-XA': 'Arabic',
+            'ru-RU': 'Russian',
+            'vi-VN': 'Vietnamese',
+            'th-TH': 'Thai',
+            'tr-TR': 'Turkish',
+            'nl-NL': 'Dutch',
+            'pl-PL': 'Polish',
+            'id-ID': 'Indonesian',
+            'bn-IN': 'Bengali',
+            'gu-IN': 'Gujarati',
+            'kn-IN': 'Kannada',
+            'ml-IN': 'Malayalam',
+            'mr-IN': 'Marathi',
+            'ta-IN': 'Tamil',
+            'te-IN': 'Telugu'
+        };
+        return languageNames[languageCode] || 'English';
     }
     async createLiveSession(config = {}, messageHandler) {
         try {
@@ -52,11 +125,35 @@ LOCATION-SPECIFIC GUIDANCE:
 - Recommend authentic local experiences and dining options
 - Always search for the most current information about attractions, events, and local conditions`;
             }
+            let languageContext = '';
+            if (config.language && config.language !== 'en-US') {
+                const languageName = this.getLanguageName(config.language);
+                languageContext = `
+
+LANGUAGE PREFERENCE: ${languageName} (${config.language})
+
+LANGUAGE-SPECIFIC GUIDANCE:
+- The user prefers communication in ${languageName}
+- Respond primarily in ${languageName} while maintaining tour guide expertise
+- Include local phrases and greetings when appropriate
+- Be culturally sensitive to the linguistic region
+- When mentioning places or attractions, provide names in both local language and English if different
+- Consider cultural context specific to ${languageName}-speaking regions`;
+            }
             const defaultConfig = {
                 responseModalities: [genai_1.Modality.AUDIO],
                 inputAudioTranscription: {},
                 outputAudioTranscription: {},
-                systemInstruction: `You are an expert tour guide assistant with access to powerful tools and real-time information.${locationContext}
+                ...(config.language && {
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: this.getVoiceForLanguage(config.language)
+                            }
+                        }
+                    }
+                }),
+                systemInstruction: `You are an expert tour guide assistant with access to powerful tools and real-time information.${locationContext}${languageContext}
 
 CORE CAPABILITIES:
 - Provide comprehensive travel and tourism information
@@ -70,7 +167,18 @@ AVAILABLE TOOLS:
 2. Code Execution - For calculations, data analysis, and computational tasks
 3. Memory System - Access user preferences and past interactions for personalized recommendations
 4. Location Services - Get nearby attractions, directions, dining recommendations, and transportation options
-5. Real-time Audio - Communicate naturally through voice interactions
+5. Bookmark System - Save and retrieve user's favorite places and recommendations
+6. Real-time Audio - Communicate naturally through voice interactions
+
+BOOKMARK FUNCTIONALITY:
+- PROACTIVELY offer to save ANY interesting content during conversations (not just places)
+- Save food recommendations, stories, memories, tips, experiences, places, accommodations - ANYTHING the user finds interesting
+- Watch for user reactions like "that sounds great", "I'd love to try that", "interesting", "I should remember that"
+- Automatically ask: "Would you like me to save this for you?" when sharing interesting content
+- Use save_bookmark function when users say "save this", "bookmark this", "remember this", or show interest
+- Use get_bookmarks function when users ask to see their saved items
+- Categories: food, place, memory, tip, accommodation, general
+- Build their personal collection of memories and recommendations from conversations
 
 PRESENTATION STYLE:
 - Be enthusiastic and knowledgeable about destinations
@@ -91,11 +199,14 @@ INTERACTION APPROACH:
 - Always explain the benefit: "This will help me recommend places within walking distance and give you the best local insights"
 - Use their responses to provide increasingly targeted suggestions
 - Be respectful of privacy - never pressure users to share more than they're comfortable with
+- PROACTIVELY offer bookmarks: After sharing interesting content, ask "Would you like me to save this for you?"
+- Pay attention to user enthusiasm and offer to save things they seem excited about
 - Remember: You're creating memorable travel experiences through knowledgeable, personalized guidance`,
                 tools: config.tools || this.getDefaultTools(),
                 ...config
             };
             delete defaultConfig.locationContext;
+            delete defaultConfig.language;
             const responseQueue = [];
             let messageHandlerRef = messageHandler;
             const waitMessage = async () => {
@@ -251,10 +362,13 @@ INTERACTION APPROACH:
             'get_nearby_attractions',
             'get_directions',
             'get_dining_recommendations',
-            'get_transportation_options'
+            'get_transportation_options',
+            'save_bookmark',
+            'get_bookmarks'
         ];
         if (tourGuideTools.includes(name)) {
-            return await this.toolsService.handleTourGuideFunction(functionCall);
+            console.log(`🔧 GeminiService - Calling tour guide function ${name} with userId: ${userId}`);
+            return await this.toolsService.handleTourGuideFunction(functionCall, userId);
         }
         this.logger.log(`Unknown function call: ${name} - returning null`);
         return null;

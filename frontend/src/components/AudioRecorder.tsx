@@ -17,12 +17,18 @@ interface AudioShareProps {
   locationData?: any;
   isLocationReady?: boolean;
   locationError?: string | null;
+  selectedLanguage?: string;
+  onAudioLevelChange?: (level: number) => void;
+  onSpeakingStateChange?: (isSpeaking: boolean) => void;
 }
 
 const AudioShare: React.FC<AudioShareProps> = ({ 
   locationData, 
   isLocationReady = false, 
-  locationError = null 
+  locationError = null,
+  selectedLanguage = 'en-US',
+  onAudioLevelChange,
+  onSpeakingStateChange
 }) => {
   console.log('🎬 AudioShare component is rendering...');
   
@@ -55,7 +61,7 @@ const AudioShare: React.FC<AudioShareProps> = ({
       hasLocationData: !!locationData,
       isLocationReady,
       locationError,
-      basicLocation: locationData ? { country: locationData.country, state: locationData.state } : null
+      basicLocation: locationData ? { city: locationData.city, state: locationData.state, country: locationData.country } : null
     });
   }, [locationData, isLocationReady, locationError]);
 
@@ -86,8 +92,20 @@ const AudioShare: React.FC<AudioShareProps> = ({
         };
         return [...prev, newMessage];
       });
+
+      // Notify parent of speaking state changes
+      if (onSpeakingStateChange && lastTranscription.sender === 'User') {
+        onSpeakingStateChange(!lastTranscription.finished);
+      }
     }
-  }, [lastTranscription]);
+  }, [lastTranscription, onSpeakingStateChange]);
+
+  // Track audio levels for parent component
+  useEffect(() => {
+    if (onAudioLevelChange) {
+      onAudioLevelChange(audioLevel);
+    }
+  }, [audioLevel, onAudioLevelChange]);
 
   const startSharing = async () => {
     if (isSharing) return;
@@ -143,19 +161,21 @@ const AudioShare: React.FC<AudioShareProps> = ({
       source.connect(audioWorkletNodeRef.current);
       audioStreamRef.current = audioStream;
 
-      // Extract only basic location data - let AI ask for more details when needed
+      // Extract basic location data including city - let AI ask for more details when needed
       console.log('✅ Extracting basic location from parent component data...');
       const basicLocation = locationData ? {
-        country: locationData.country,
-        state: locationData.state
+        city: locationData.city,
+        state: locationData.state,
+        country: locationData.country
       } : null;
       
-      console.log('📋 Basic location for AI:', basicLocation);
+      console.log('📋 Basic location for AI (including city):', basicLocation);
+      console.log('🌐 Selected language:', selectedLanguage);
       console.log('💾 Storing detailed location data locally for AI requests');
 
-      // Start the AI interaction session with basic location context
-      console.log('🚀 Starting AI interaction with basic location context...');
-      startInteraction(basicLocation);
+      // Start the AI interaction session with basic location context and language
+      console.log('🚀 Starting AI interaction with location and language context...');
+      startInteraction(basicLocation, selectedLanguage);
 
       setIsSharing(true);
     } catch (err) {
@@ -190,97 +210,58 @@ const AudioShare: React.FC<AudioShareProps> = ({
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6 max-w-3xl">
-      {/* Welcome Header */}
-      <div className="text-center space-y-2">
-        <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
-          Gemini Audio Learning Assistant
-        </h1>
-        <p className="text-xl text-muted-foreground">
-          Share your audio and talk to me
+    <div className="flex flex-col items-center justify-center space-y-8">
+      {/* Status Message */}
+      <div className="text-center">
+        <p className="text-white/80 text-lg">
+          {isSharing ? "Listening..." : "Ready to chat"}
         </p>
       </div>
 
       {/* Audio Controls */}
-      <Card className="w-full md:w-[640px] mx-auto">
-        <CardContent className="p-6">
-          <div className="flex flex-col items-center space-y-4">
-            {/* Audio Level Indicator */}
-            {isSharing && (
-              <div className="w-full space-y-2">
-                <Progress
-                  value={Math.max(audioLevel, playbackAudioLevel)}
-                  className="h-1 bg-white"
-                  indicatorClassName="bg-black"
-                />
-              </div>
-            )}
+      <div className="flex items-center space-x-6">
+        {!isSharing ? (
+          <button
+            onClick={startSharing}
+            disabled={!isConnected}
+            className={`
+              w-16 h-16 rounded-full flex items-center justify-center 
+              transition-all duration-300 transform hover:scale-110
+              ${isConnected 
+                ? 'bg-white/20 hover:bg-white/30 text-white' 
+                : 'bg-red-500/20 text-red-400 cursor-not-allowed'
+              }
+            `}
+          >
+            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={stopSharing}
+            className="w-16 h-16 rounded-full flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all duration-300 transform hover:scale-110"
+          >
+            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 6h12v12H6z"/>
+            </svg>
+          </button>
+        )}
+      </div>
 
-            {!isSharing ? (
-              <div className="flex flex-col items-center space-y-2">
-                <Button
-                  size="lg"
-                  onClick={startSharing}
-                  disabled={!isConnected}
-                  variant={isConnected ? "default" : "outline"}
-                  className={!isConnected ? "border-red-300 text-red-700" : ""}
-                >
-                  {!isConnected 
-                    ? "Connecting to server..."
-                    : "Start Audio Share"
-                  }
-                </Button>
-                {locationError && (
-                  <p className="text-sm text-yellow-600">
-                    ⚠️ {locationError}
-                  </p>
-                )}
-                {isLocationReady && (
-                  <p className="text-sm text-green-600">
-                    ✅ Location ready
-                  </p>
-                )}
-              </div>
-            ) : (
-              <Button size="lg" variant="destructive" onClick={stopSharing}>
-                Stop Sharing
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Chat History */}
-      <Card className="w-full md:w-[640px] mx-auto">
-        <CardHeader>
-          <CardTitle>Chat History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[400px] pr-4">
-            <div className="space-y-4">
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className="flex items-start space-x-4 rounded-lg p-4 bg-muted/50"
-                >
-                  <div className="h-8 w-8 rounded-full flex items-center justify-center bg-primary">
-                    <span className="text-xs font-medium text-primary-foreground">
-                      {message.sender === "Gemini" ? "AI" : "You"}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm leading-loose">{message.text}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {message.timestamp}
-                      {!message.isComplete && " (typing...)"}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+      {/* Connection Status */}
+      {!isConnected && (
+        <p className="text-red-400 text-sm">
+          Connecting to server...
+        </p>
+      )}
+      
+      {/* Location Status */}
+      {locationError && (
+        <p className="text-yellow-400 text-sm">
+          ⚠️ {locationError}
+        </p>
+      )}
     </div>
   );
 };

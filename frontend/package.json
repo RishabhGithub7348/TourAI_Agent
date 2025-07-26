@@ -13,7 +13,7 @@
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-progress": "^1.1.7",
     "@radix-ui/react-scroll-area": "^1.2.9",
-    "@react-three/drei": "^10.6.0",
+    "@react-three/drei": "^10.6.1",
     "@react-three/fiber": "^9.2.0",
     "@types/three": "^0.178.1",
     "class-variance-authority": "^0.7.1",

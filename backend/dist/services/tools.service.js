@@ -13,10 +13,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ToolsService = void 0;
 const common_1 = require("@nestjs/common");
 const config_service_1 = require("../config/config.service");
+const memory_service_1 = require("./memory.service");
 const google_maps_services_js_1 = require("@googlemaps/google-maps-services-js");
 let ToolsService = ToolsService_1 = class ToolsService {
-    constructor(configService) {
+    constructor(configService, memoryService) {
         this.configService = configService;
+        this.memoryService = memoryService;
         this.logger = new common_1.Logger(ToolsService_1.name);
         this.googleMapsClient = new google_maps_services_js_1.Client({});
     }
@@ -257,6 +259,138 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
         response += `\n\n---\n*I'm here to help make your travel experience amazing! Ask me anything else about your destination.*`;
         return response;
     }
+    async saveBookmark(content, type, context, userId) {
+        try {
+            console.log('📚 ToolsService - Saving bookmark:', { content, type, context, userId });
+            const contentType = type || this.determineContentType(content);
+            const bookmarkData = {
+                title: this.extractTitle(content, contentType),
+                description: content.trim(),
+                location: this.extractLocation(content),
+                category: contentType,
+                url: ''
+            };
+            const finalUserId = userId || 'test_user_123';
+            console.log('📚 ToolsService - Using userId for bookmark:', finalUserId);
+            console.log('📚 ToolsService - Bookmark data to save:', bookmarkData);
+            const bookmarkId = await this.memoryService.addBookmark(bookmarkData, finalUserId);
+            if (bookmarkId) {
+                const successMessage = `✅ Saved to your bookmarks! I've saved this ${contentType} so you can remember it later.`;
+                console.log('✅ ToolsService - Bookmark saved with ID:', bookmarkId);
+                return this.formatTourGuideResponse('📚 Bookmark Saved', successMessage, ['Say "show my bookmarks" to see all your saved items', 'I can save any interesting stories, places, food, or memories you want to remember']);
+            }
+            else {
+                const errorMessage = `❌ Sorry, I couldn't save that to your bookmarks. Please try again.`;
+                console.error('❌ ToolsService - Bookmark save failed');
+                return this.formatTourGuideResponse('❌ Save Failed', errorMessage, ['Check your internet connection', 'Try rephrasing what you want to save']);
+            }
+        }
+        catch (error) {
+            this.logger.error(`Error saving bookmark: ${error.message}`);
+            console.error('❌ ToolsService - Bookmark save error:', error);
+            return `❌ Failed to save bookmark: ${error.message}`;
+        }
+    }
+    determineContentType(content) {
+        const lowerContent = content.toLowerCase();
+        if (lowerContent.includes('restaurant') || lowerContent.includes('food') || lowerContent.includes('dish') || lowerContent.includes('cuisine')) {
+            return 'food';
+        }
+        else if (lowerContent.includes('museum') || lowerContent.includes('attraction') || lowerContent.includes('temple') || lowerContent.includes('park')) {
+            return 'place';
+        }
+        else if (lowerContent.includes('story') || lowerContent.includes('experience') || lowerContent.includes('memory')) {
+            return 'memory';
+        }
+        else if (lowerContent.includes('tip') || lowerContent.includes('advice') || lowerContent.includes('recommend')) {
+            return 'tip';
+        }
+        else if (lowerContent.includes('hotel') || lowerContent.includes('accommodation')) {
+            return 'accommodation';
+        }
+        else {
+            return 'general';
+        }
+    }
+    extractTitle(content, type) {
+        const words = content.split(' ');
+        if (words.length <= 8) {
+            return content;
+        }
+        if (type === 'food') {
+            const foodMatch = content.match(/(?:restaurant|dish|cuisine|food)\s+[\w\s]{1,30}/i);
+            if (foodMatch)
+                return foodMatch[0];
+        }
+        else if (type === 'place') {
+            const placeMatch = content.match(/(?:museum|temple|park|attraction)\s+[\w\s]{1,30}/i);
+            if (placeMatch)
+                return placeMatch[0];
+        }
+        return words.slice(0, 8).join(' ') + '...';
+    }
+    extractLocation(content) {
+        const locationMatch = content.match(/(?:in|at|near)\s+([\w\s]{2,30})(?:\s|$|,|\.)/i);
+        return locationMatch ? locationMatch[1].trim() : '';
+    }
+    async getBookmarks(userId) {
+        try {
+            const finalUserId = userId || 'test_user_123';
+            console.log('📚 ToolsService - Getting bookmarks for user:', finalUserId);
+            const bookmarks = await this.memoryService.getBookmarks(finalUserId);
+            if (bookmarks.length === 0) {
+                return this.formatTourGuideResponse('📚 Your Saved Items', 'You haven\'t saved anything yet! During our conversations, whenever you find something interesting - a place, food recommendation, story, or memory - just say "save this" and I\'ll bookmark it for you.', ['Try saying "save this" when I mention something interesting', 'I can save places, food recommendations, stories, tips, or any memories you want to keep']);
+            }
+            const bookmarksByCategory = bookmarks.reduce((acc, bookmark) => {
+                const memoryText = bookmark.memory;
+                const titleMatch = memoryText.match(/User saved bookmark: "([^"]+)"/);
+                const title = titleMatch ? titleMatch[1] : 'Untitled';
+                const descMatch = memoryText.match(/" - ([^(]+)/);
+                const description = descMatch ? descMatch[1].trim() : 'No description';
+                const locationMatch = memoryText.match(/\(Location: ([^)]+)\)/);
+                const location = locationMatch ? locationMatch[1] : '';
+                const category = this.determineContentType(description);
+                if (!acc[category]) {
+                    acc[category] = [];
+                }
+                acc[category].push({
+                    title,
+                    description,
+                    location
+                });
+                return acc;
+            }, {});
+            const categoryEmojis = {
+                food: '🍽️',
+                place: '📍',
+                memory: '💭',
+                tip: '💡',
+                accommodation: '🏨',
+                general: '📝'
+            };
+            let content = `You have ${bookmarks.length} saved item${bookmarks.length === 1 ? '' : 's'}:\n\n`;
+            Object.entries(bookmarksByCategory).forEach(([category, items]) => {
+                const emoji = categoryEmojis[category] || '📝';
+                const categoryName = category.charAt(0).toUpperCase() + category.slice(1);
+                content += `${emoji} **${categoryName}${items.length > 1 ? 's' : ''}** (${items.length})\n`;
+                items.forEach((item, index) => {
+                    const locationText = item.location ? ` 📍 ${item.location}` : '';
+                    content += `   ${index + 1}. ${item.title}${locationText}\n`;
+                    if (item.description !== item.title) {
+                        content += `      ${item.description.substring(0, 100)}${item.description.length > 100 ? '...' : ''}\n`;
+                    }
+                });
+                content += '\n';
+            });
+            console.log('✅ ToolsService - Retrieved bookmarks:', bookmarks.length);
+            return this.formatTourGuideResponse('📚 Your Saved Collection', content, ['Say "save this" whenever I mention something you want to remember', 'I can save any type of content - places, food, stories, tips, or memories']);
+        }
+        catch (error) {
+            this.logger.error(`Error getting bookmarks: ${error.message}`);
+            console.error('❌ ToolsService - Get bookmarks error:', error);
+            return `❌ Failed to retrieve bookmarks: ${error.message}`;
+        }
+    }
     getTourGuideTools() {
         return {
             function_declarations: [
@@ -337,13 +471,45 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
                         required: ['from', 'to'],
                     },
                 },
+                {
+                    name: 'save_bookmark',
+                    description: 'Save any interesting content from the conversation as a bookmark - places, food recommendations, stories, memories, tips, or any other content the user wants to remember',
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {
+                            content: {
+                                type: 'STRING',
+                                description: 'The content to save - can be about places, food, stories, memories, tips, or any interesting information',
+                            },
+                            type: {
+                                type: 'STRING',
+                                description: 'Type of content: food, place, memory, tip, accommodation, or general (optional)',
+                            },
+                            context: {
+                                type: 'STRING',
+                                description: 'Additional context about why this is being saved (optional)',
+                            },
+                        },
+                        required: ['content'],
+                    },
+                },
+                {
+                    name: 'get_bookmarks',
+                    description: 'Retrieve all saved bookmarks for the user',
+                    parameters: {
+                        type: 'OBJECT',
+                        properties: {},
+                        required: [],
+                    },
+                },
             ],
         };
     }
-    async handleTourGuideFunction(functionCall) {
+    async handleTourGuideFunction(functionCall, userId) {
         const { name, args, id: callId } = functionCall;
         try {
             let result;
+            console.log(`🔧 ToolsService - Handling function: ${name} with args:`, args);
             switch (name) {
                 case 'get_nearby_attractions':
                     result = await this.getNearbyAttractions(args.location, args.radius);
@@ -357,9 +523,16 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
                 case 'get_transportation_options':
                     result = await this.getTransportationOptions(args.from, args.to);
                     break;
+                case 'save_bookmark':
+                    result = await this.saveBookmark(args.content, args.type, args.context, userId);
+                    break;
+                case 'get_bookmarks':
+                    result = await this.getBookmarks(userId);
+                    break;
                 default:
                     result = `Unknown function: ${name}`;
             }
+            console.log(`✅ ToolsService - Function ${name} completed successfully`);
             return {
                 id: callId,
                 name,
@@ -368,6 +541,7 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
         }
         catch (error) {
             this.logger.error(`Error in tour guide function ${name}: ${error.message}`);
+            console.error(`❌ ToolsService - Function ${name} error:`, error);
             return {
                 id: callId,
                 name,
@@ -379,6 +553,7 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
 exports.ToolsService = ToolsService;
 exports.ToolsService = ToolsService = ToolsService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [config_service_1.AppConfigService])
+    __metadata("design:paramtypes", [config_service_1.AppConfigService,
+        memory_service_1.MemoryService])
 ], ToolsService);
 //# sourceMappingURL=tools.service.js.map

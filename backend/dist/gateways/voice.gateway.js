@@ -44,10 +44,9 @@ let VoiceGateway = VoiceGateway_1 = class VoiceGateway {
     async handleConnection(client) {
         this.logger.log(`Client connected: ${client.id}`);
         const sessionId = (0, uuid_1.v4)();
-        const userId = this.memoryService.getUserId(sessionId);
         const sessionData = {
             sessionId,
-            userId,
+            userId: 'pending',
             geminiSession: null,
             currentConversation: [],
             hasUserAudio: false,
@@ -62,7 +61,7 @@ let VoiceGateway = VoiceGateway_1 = class VoiceGateway {
         this.sessions.set(client.id, sessionData);
         client.emit('connected', {
             sessionId,
-            userId,
+            userId: 'pending',
             status: 'ready_for_interaction'
         });
     }
@@ -104,6 +103,16 @@ let VoiceGateway = VoiceGateway_1 = class VoiceGateway {
                 return;
             }
             const config = data.setup || {};
+            if (config.userId) {
+                sessionData.userId = config.userId;
+                this.logger.log(`✅ User ID set for client ${client.id}: ${config.userId}`);
+                console.log(`📋 User ID received from frontend: ${config.userId}`);
+            }
+            else {
+                sessionData.userId = this.memoryService.getUserId(sessionData.sessionId);
+                this.logger.log(`⚠️ No user ID provided, using fallback: ${sessionData.userId}`);
+                console.log(`⚠️ No user ID from frontend, using fallback: ${sessionData.userId}`);
+            }
             if (config.location) {
                 sessionData.location = config.location;
                 this.logger.log(`User location set for client ${client.id}: ${config.location}`);
@@ -112,6 +121,7 @@ let VoiceGateway = VoiceGateway_1 = class VoiceGateway {
             client.emit('setup_complete', {
                 status: 'waiting_for_interaction',
                 location: config.location,
+                userId: sessionData.userId,
                 message: 'Ready to start. Click the audio button to begin conversation.'
             });
         }
@@ -139,6 +149,9 @@ let VoiceGateway = VoiceGateway_1 = class VoiceGateway {
                 sessionData.location = locationParts.join(', ') || 'Unknown location';
                 this.logger.log(`🌍 Location received for client ${client.id}: ${sessionData.location}`);
             }
+            const language = data.language || 'en-US';
+            sessionData.language = language;
+            this.logger.log(`🗣️ Language preference for client ${client.id}: ${language}`);
             if (sessionData.geminiSession) {
                 client.emit('interaction_started', { status: 'already_active' });
                 return;
@@ -160,7 +173,8 @@ let VoiceGateway = VoiceGateway_1 = class VoiceGateway {
             }
             const enhancedConfig = {
                 responseModalities: ['AUDIO'],
-                locationContext: sessionData.location
+                locationContext: sessionData.location,
+                language: language
             };
             const messageHandler = (data) => {
                 try {
@@ -659,7 +673,8 @@ let VoiceGateway = VoiceGateway_1 = class VoiceGateway {
             }
             const enhancedConfig = {
                 responseModalities: ['AUDIO'],
-                locationContext: sessionData.location
+                locationContext: sessionData.location,
+                language: sessionData.language || 'en-US'
             };
             const messageHandler = (data) => {
                 try {

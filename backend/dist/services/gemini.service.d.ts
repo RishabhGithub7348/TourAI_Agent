@@ -10,6 +10,8 @@ export declare class GeminiService {
     private readonly MODEL;
     constructor(configService: AppConfigService, memoryService: MemoryService, toolsService: ToolsService);
     private getDefaultTools;
+    private getVoiceForLanguage;
+    private getLanguageName;
     createLiveSession(config?: any, messageHandler?: (data: any) => void): Promise<{
         originalSession: import("@google/genai").Session;
         responseQueue: any[];

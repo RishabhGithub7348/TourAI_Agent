@@ -14,6 +14,7 @@ const gemini_service_1 = require("./services/gemini.service");
 const memory_service_1 = require("./services/memory.service");
 const tools_service_1 = require("./services/tools.service");
 const config_service_1 = require("./config/config.service");
+const test_controller_1 = require("./controllers/test.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -25,6 +26,7 @@ exports.AppModule = AppModule = __decorate([
                 envFilePath: '.env',
             }),
         ],
+        controllers: [test_controller_1.TestController],
         providers: [
             config_service_1.AppConfigService,
             memory_service_1.MemoryService,

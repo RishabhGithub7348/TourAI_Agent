@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { useUser } from '@clerk/nextjs'
+import { useUser, useClerk } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { 
   MapPin,
   Bookmark,
-  Book
+  Book,
+  LogOut
 } from 'lucide-react'
 import { useGeolocation } from '@/hooks/useGeolocation'
 import { WebSocketProvider, useWebSocket } from '@/components/WebSocketProvider'
@@ -16,19 +17,32 @@ import { Bookmarks } from '@/components/voice/Bookmarks'
 import { StoryMode } from '@/components/voice/StoryMode'
 import { GoogleMapsService } from '@/services/googleMapsService'
 import { LocationService } from '@/services/locationService'
+import { AudioVisualization3D } from '@/components/AudioVisualization3D'
+import { LanguageSelector } from '@/components/LanguageSelector'
 
 
 function VoicePageContent() {
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false)
   const [isStoryModeOpen, setIsStoryModeOpen] = useState(false)
+  const { signOut } = useClerk()
+  const router = useRouter()
 
   // Location state management
   const [detailedLocation, setDetailedLocation] = useState<any>(null)
   const [isExtractingLocation, setIsExtractingLocation] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
 
+  // Audio visualization state
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false)
+  const [isAISpeaking, setIsAISpeaking] = useState(false)
+  const [currentAudioLevel, setCurrentAudioLevel] = useState(0)
+  const [currentPlaybackLevel, setCurrentPlaybackLevel] = useState(0)
+
+  // Language state
+  const [selectedLanguage, setSelectedLanguage] = useState('en-US')
+
   // Get WebSocket context
-  const { isConnected } = useWebSocket()
+  const { isConnected, lastTranscription, playbackAudioLevel } = useWebSocket()
   
   // Geolocation hook
   const { position, loading: locationLoading, locationString, getCurrentPosition, isSupported } = useGeolocation()
@@ -127,91 +141,133 @@ function VoicePageContent() {
     extractLocationDetails()
   }, [position, isExtractingLocation, detailedLocation, locationString])
 
+  // Track transcription states for 3D visualization
+  useEffect(() => {
+    if (lastTranscription) {
+      if (lastTranscription.sender === 'User') {
+        setIsUserSpeaking(!lastTranscription.finished)
+        setIsAISpeaking(false)
+      } else if (lastTranscription.sender === 'Gemini') {
+        setIsUserSpeaking(false)
+        setIsAISpeaking(!lastTranscription.finished)
+      }
+    }
+  }, [lastTranscription])
+
+  // Track playback audio levels
+  useEffect(() => {
+    setCurrentPlaybackLevel(playbackAudioLevel)
+    if (playbackAudioLevel > 0) {
+      setIsAISpeaking(true)
+    } else {
+      // Small delay before setting AI speaking to false to avoid flickering
+      const timeout = setTimeout(() => setIsAISpeaking(false), 500)
+      return () => clearTimeout(timeout)
+    }
+  }, [playbackAudioLevel])
+
   const handleStartStory = (storyId: string) => {
     console.log('Starting story:', storyId)
     setIsStoryModeOpen(false)
     // Here you could integrate story mode with your Gemini backend
   }
 
+  const handleLogout = async () => {
+    await signOut()
+    router.push('/')
+  }
+
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex flex-col">
-      {/* Header */}
-      <header className="glass border-b border-white/10 p-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div>
-              <h1 className="text-xl font-bold gradient-text">TourGuide AI</h1>
-              <div className="flex flex-col space-y-1">
-                <div className="flex items-center space-x-2 text-sm text-gray-400">
-                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                  <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
-                </div>
-                {locationString && (
-                  <div className="flex items-center space-x-2 text-xs text-green-400">
-                    <MapPin className="w-3 h-3" />
-                    <span className="truncate max-w-48">{locationString}</span>
-                  </div>
-                )}
-                {isExtractingLocation && (
-                  <div className="flex items-center space-x-2 text-xs text-yellow-400">
-                    <div className="w-3 h-3 border border-yellow-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Getting location details...</span>
-                  </div>
-                )}
-                {detailedLocation && !isExtractingLocation && (
-                  <div className="flex items-center space-x-2 text-xs text-blue-400">
-                    <div className="w-3 h-3 bg-blue-400 rounded-full" />
-                    <span>Location ready for AI</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black relative overflow-hidden">
+      {/* Animated background gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-purple-900/10 to-black opacity-50" />
+      
+      {/* TourGuide Logo - Top Left */}
+      <div className="absolute top-6 left-6 z-20">
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+          TourGuide AI
+        </h1>
+      </div>
 
-          <div className="flex items-center space-x-4">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={getCurrentPosition}
-              disabled={!isSupported || locationLoading}
-              title={locationString || (locationError ? 'Location access failed' : 'Get current location')}
-              className={`relative ${locationString ? 'text-green-400' : locationError ? 'text-red-400' : ''}`}
-            >
-              <MapPin className={`w-5 h-5 ${locationLoading ? 'animate-pulse' : ''}`} />
-              {locationString && (
-                <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" />
-              )}
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => setIsBookmarksOpen(true)}
-              title="Bookmarks"
-            >
-              <Bookmark className="w-5 h-5" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => setIsStoryModeOpen(true)}
-              title="Story Mode"
-            >
-              <Book className="w-5 h-5" />
-            </Button>
-          </div>
+      {/* Settings Icons - Top Right */}
+      <div className="absolute top-6 right-6 z-20 flex items-center space-x-3">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={getCurrentPosition}
+          disabled={!isSupported || locationLoading}
+          title={locationString || (locationError ? 'Location access failed' : 'Get current location')}
+          className={`w-10 h-10 rounded-full hover:bg-white/10 transition-all duration-300 ${locationString ? 'text-green-400' : locationError ? 'text-red-400' : 'text-white/60'}`}
+        >
+          <MapPin className={`w-5 h-5 ${locationLoading ? 'animate-pulse' : ''}`} />
+        </Button>
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => setIsBookmarksOpen(true)}
+          title="Bookmarks"
+          className="w-10 h-10 rounded-full hover:bg-white/10 transition-all duration-300 text-white/60 hover:text-white"
+        >
+          <Bookmark className="w-5 h-5" />
+        </Button>
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={() => setIsStoryModeOpen(true)}
+          title="Story Mode"
+          className="w-10 h-10 rounded-full hover:bg-white/10 transition-all duration-300 text-white/60 hover:text-white"
+        >
+          <Book className="w-5 h-5" />
+        </Button>
+        <LanguageSelector 
+          selectedLanguage={selectedLanguage}
+          onLanguageChange={setSelectedLanguage}
+        />
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={handleLogout}
+          title="Logout"
+          className="w-10 h-10 rounded-full hover:bg-white/10 transition-all duration-300 text-white/60 hover:text-red-400"
+        >
+          <LogOut className="w-5 h-5" />
+        </Button>
+      </div>
+
+      {/* Connection Status - Below Logo */}
+      <div className="absolute top-16 left-6 z-20">
+        <div className="flex items-center space-x-2 text-sm text-white/60">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
+          <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
-      <div className="flex-1 container mx-auto p-4">
-        <AudioShare 
-          locationData={detailedLocation}
-          isLocationReady={!!detailedLocation && !isExtractingLocation}
-          locationError={locationError}
-        />
+      <div className="absolute inset-0 z-10 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-8">
+          {/* 3D Visualization - Full Size */}
+          <div className="relative flex items-center justify-center md:ml-10 w-96 h-96">
+            <AudioVisualization3D
+              isUserSpeaking={isUserSpeaking}
+              isAISpeaking={isAISpeaking}
+              audioLevel={currentAudioLevel}
+              playbackLevel={currentPlaybackLevel}
+              isConnected={isConnected}
+            />
+          </div>
+          
+          {/* Audio Controls */}
+          <AudioShare 
+            locationData={detailedLocation}
+            isLocationReady={!!detailedLocation && !isExtractingLocation}
+            locationError={locationError}
+            selectedLanguage={selectedLanguage}
+            onAudioLevelChange={setCurrentAudioLevel}
+            onSpeakingStateChange={setIsUserSpeaking}
+          />
+        </div>
       </div>
-     
 
       {/* Modals */}
       <Bookmarks 
@@ -228,7 +284,7 @@ function VoicePageContent() {
 }
 
 export default function VoicePage() {
-  const { isLoaded, isSignedIn } = useUser()
+  const { isLoaded, isSignedIn, user } = useUser()
   const router = useRouter()
 
   // Redirect if not signed in
@@ -245,7 +301,7 @@ export default function VoicePage() {
   }
 
   return (
-    <WebSocketProvider url="ws://localhost:9084">
+    <WebSocketProvider url="ws://localhost:9084" userId={user?.id}>
       <VoicePageContent />
     </WebSocketProvider>
   )

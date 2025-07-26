@@ -1,20 +1,22 @@
-import { SignIn } from '@clerk/nextjs'
+import { SignUp } from '@clerk/nextjs'
 
-export default function SignInPage() {
+export default function SignUpPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-black via-gray-900 to-black">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold gradient-text mb-4">
-            Welcome Back
+            Join TourGuide AI
           </h1>
           <p className="text-gray-300">
-            Continue your journey with TourGuide AI
+            Start exploring the world with your personal AI guide
           </p>
         </div>
         
         <div className="glass rounded-2xl p-8 shadow-2xl">
-          <SignIn 
+          <SignUp 
+            afterSignUpUrl="/voice"
+            redirectUrl="/voice"
             appearance={{
               baseTheme: undefined,
               variables: {

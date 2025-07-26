@@ -19,7 +19,7 @@ import React, {
   interface WebSocketContextType {
     sendMessage: (message: { text?: string; [key: string]: unknown }) => void;
     sendMediaChunk: (chunk: MediaChunk) => void;
-    startInteraction: (locationData?: any) => void;
+    startInteraction: (locationData?: any, languageCode?: string) => void;
     stopInteraction: () => void;
     getSessionStatus: () => void;
     lastTranscription: TranscriptionMessage | null;
@@ -45,10 +45,11 @@ import React, {
   const AUDIO_BUFFER_DURATION = 2000; // 2 seconds in milliseconds
   const LOOPBACK_DELAY = 3000; // 3 seconds delay matching backend
   
-  export const WebSocketProvider: React.FC<{ children: React.ReactNode; url: string }> = ({
+  export const WebSocketProvider: React.FC<{ children: React.ReactNode; url: string; userId?: string }> = ({
     children,
     url,
-  }: { children: React.ReactNode; url: string }) => {
+    userId,
+  }: { children: React.ReactNode; url: string; userId?: string }) => {
     const [isConnected, setIsConnected] = useState(false);
     const [playbackAudioLevel, setPlaybackAudioLevel] = useState(0);
     const [lastTranscription, setLastTranscription] = useState<TranscriptionMessage | null>(null);
@@ -89,11 +90,12 @@ import React, {
   
         socket.on('connect', () => {
           setIsConnected(true);
-          console.log("Socket connected, sending initial setup");
+          console.log("Socket connected, sending initial setup with user ID:", userId);
           
-          // Send initial setup message
+          // Send initial setup message with user ID
           socket.emit('setup', {
             setup: {
+              userId: userId || null
               // Add any needed config options
             }
           });
@@ -399,11 +401,12 @@ import React, {
       }
     };
 
-    const startInteraction = (locationData?: any) => {
+    const startInteraction = (locationData?: any, languageCode?: string) => {
       if (socketRef.current?.connected) {
-        console.log('Starting AI interaction with location:', locationData);
+        console.log('Starting AI interaction with location:', locationData, 'language:', languageCode);
         socketRef.current.emit('start_interaction', {
-          location: locationData
+          location: locationData,
+          language: languageCode || 'en-US'
         });
       }
     };
