@@ -6,4 +6,8 @@ export declare class AppConfigService {
     get mem0ApiKey(): string;
     get googleMapsApiKey(): string;
     get websocketPort(): number;
+    get pineconeApiKey(): string;
+    get pineconeEnvironment(): string;
+    get pineconeIndexName(): string;
+    get openaiApiKey(): string;
 }

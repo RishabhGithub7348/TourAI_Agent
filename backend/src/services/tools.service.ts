@@ -339,6 +339,12 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
     userId?: string
   ): Promise<string> {
     try {
+      console.log('📚 ToolsService - VOICE BOOKMARK SAVE ATTEMPT:');
+      console.log('📚 Content length:', content?.length || 0);
+      console.log('📚 Content preview:', content?.substring(0, 200) || 'NO CONTENT');
+      console.log('📚 Type:', type);
+      console.log('📚 Context:', context);
+      console.log('📚 UserId:', userId);
       console.log('📚 ToolsService - Saving bookmark:', { content, type, context, userId });
       
       // Determine the type of content being saved

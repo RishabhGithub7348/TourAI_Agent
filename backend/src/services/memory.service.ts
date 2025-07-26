@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MemoryClient } from 'mem0ai';
 import { AppConfigService } from '../config/config.service';
+import { PineconeService } from './pinecone.service';
 import { ConversationMessage, MemoryResult } from '../interfaces/conversation.interface';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
@@ -14,7 +15,10 @@ export class MemoryService {
   private readonly FIXED_USER_ID = 'test_user_123';
   private readonly BOOKMARKS_DIR = path.join(process.cwd(), 'data', 'bookmarks');
 
-  constructor(private configService: AppConfigService) {
+  constructor(
+    private configService: AppConfigService,
+    private pineconeService: PineconeService
+  ) {
     this.memory = new MemoryClient({ 
       apiKey: this.configService.mem0ApiKey 
     });
@@ -103,27 +107,34 @@ export class MemoryService {
         bookmark_location: bookmarkData.location || '',
       };
 
-      this.logger.log(`📚 Adding bookmark to memory: ${bookmarkData.title} for user: ${userId}`);
+      this.logger.log(`📚 Adding bookmark to Pinecone: ${bookmarkData.title} for user: ${userId}`);
       console.log(`📚 Bookmark Service - Adding bookmark:`, bookmarkData);
-      console.log(`📚 Bookmark Service - Mem0 API Key exists: ${!!this.configService.mem0ApiKey}`);
+      console.log(`📚 Bookmark Service - Pinecone available: ${this.pineconeService.isAvailable()}`);
       
-      // Try mem0 first
+      // Try Pinecone first
       try {
-        const result = await this.memory.add([{ 
-          role: 'user', 
-          content: bookmarkMessage 
-        }], { 
-          user_id: userId, 
-          metadata: metadata 
-        });
+        const bookmarkId = await this.pineconeService.saveBookmark(
+          bookmarkMessage, // Full content for vector embedding
+          userId,
+          {
+            title: bookmarkData.title,
+            description: bookmarkData.description,
+            category: bookmarkData.category || 'general',
+            location: bookmarkData.location,
+            url: bookmarkData.url
+          }
+        );
         
-        this.logger.log(`✅ Mem0 bookmark saved: ${JSON.stringify(result)}`);
-        console.log(`✅ Bookmark Service - Mem0 saved result:`, result);
-        
-        return Array.isArray(result) && result.length > 0 ? result[0]?.id || null : null;
-      } catch (mem0Error) {
-        this.logger.error(`❌ Mem0 failed, trying file backup: ${mem0Error.message}`);
-        console.error(`❌ Mem0 error details:`, mem0Error);
+        if (bookmarkId) {
+          this.logger.log(`✅ Pinecone bookmark saved: ${bookmarkId}`);
+          console.log(`✅ Bookmark Service - Pinecone saved with ID: ${bookmarkId}`);
+          return bookmarkId;
+        } else {
+          throw new Error('Pinecone returned null bookmark ID');
+        }
+      } catch (pineconeError) {
+        this.logger.error(`❌ Pinecone failed, trying file backup: ${pineconeError.message}`);
+        console.error(`❌ Pinecone error details:`, pineconeError);
         
         // Fallback to file storage
         return await this.addBookmarkToFile(bookmarkData, userId);
@@ -147,31 +158,23 @@ export class MemoryService {
       this.logger.log(`📚 Retrieving bookmarks for user: ${userId}`);
       console.log(`📚 Bookmark Service - Getting bookmarks for user:`, userId);
       
-      // Try mem0 first
+      // Try Pinecone first
       try {
-        const response = await this.memory.search('bookmark', { 
-          user_id: userId,
-          limit: 50 
-        });
+        const pineconeBookmarks = await this.pineconeService.getBookmarks(userId);
         
-        let bookmarks: MemoryResult[] = [];
-        
-        if (Array.isArray(response)) {
-          bookmarks = response
-            .filter(item => item.memory && item.memory.includes('User saved bookmark:'))
-            .map(item => ({
-              id: item.id || '',
-              memory: item.memory || '',
-              score: item.score || 0,
-            }));
-        }
+        // Convert Pinecone format to MemoryResult format for compatibility
+        const bookmarks: MemoryResult[] = pineconeBookmarks.map(bookmark => ({
+          id: `pinecone_${bookmark.timestamp}`, // Use timestamp as ID for compatibility
+          memory: `User saved bookmark: "${bookmark.title}" - ${bookmark.description}${bookmark.location ? ` (Location: ${bookmark.location})` : ''}${bookmark.url ? ` (URL: ${bookmark.url})` : ''}`,
+          score: 1.0 // Default score since Pinecone handles relevance differently
+        }));
 
-        this.logger.log(`📚 Retrieved ${bookmarks.length} bookmarks from mem0`);
-        console.log(`📚 Bookmark Service - Retrieved mem0 bookmarks:`, bookmarks);
+        this.logger.log(`📚 Retrieved ${bookmarks.length} bookmarks from Pinecone`);
+        console.log(`📚 Bookmark Service - Retrieved Pinecone bookmarks:`, bookmarks.length);
         
         return bookmarks;
-      } catch (mem0Error) {
-        this.logger.error(`❌ Mem0 retrieval failed, trying file backup: ${mem0Error.message}`);
+      } catch (pineconeError) {
+        this.logger.error(`❌ Pinecone retrieval failed, trying file backup: ${pineconeError.message}`);
         
         // Fallback to file storage
         return await this.getBookmarksFromFile(userId);

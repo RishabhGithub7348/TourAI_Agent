@@ -57,12 +57,16 @@ const AudioShare: React.FC<AudioShareProps> = ({
 
   // Log received props for debugging
   useEffect(() => {
-    console.log('🎬 AudioRecorder received props:', {
-      hasLocationData: !!locationData,
-      isLocationReady,
-      locationError,
-      basicLocation: locationData ? { city: locationData.city, state: locationData.state, country: locationData.country } : null
-    });
+    console.log('🎬 AudioRecorder - Props received from parent component:');
+    console.log('   📍 hasLocationData:', !!locationData);
+    console.log('   ✅ isLocationReady:', isLocationReady);
+    console.log('   ❌ locationError:', locationError);
+    console.log('   📊 Full locationData object:', locationData);
+    console.log('   📋 Extracted basic location:', locationData ? { 
+      city: locationData.city, 
+      state: locationData.state, 
+      country: locationData.country 
+    } : null);
   }, [locationData, isLocationReady, locationError]);
 
   // Handle incoming transcriptions
@@ -162,19 +166,28 @@ const AudioShare: React.FC<AudioShareProps> = ({
       audioStreamRef.current = audioStream;
 
       // Extract basic location data including city - let AI ask for more details when needed
-      console.log('✅ Extracting basic location from parent component data...');
+      console.log('✅ AudioRecorder - Extracting basic location from parent component data...');
+      console.log('📊 AudioRecorder - Raw locationData received from parent:', locationData);
+      
       const basicLocation = locationData ? {
         city: locationData.city,
         state: locationData.state,
         country: locationData.country
       } : null;
       
-      console.log('📋 Basic location for AI (including city):', basicLocation);
-      console.log('🌐 Selected language:', selectedLanguage);
-      console.log('💾 Storing detailed location data locally for AI requests');
+      console.log('📋 AudioRecorder - Basic location extracted for AI:', basicLocation);
+      console.log('🔍 AudioRecorder - Location data breakdown:');
+      console.log('   🏙️ City:', locationData?.city || 'NOT PROVIDED');
+      console.log('   🏛️ State:', locationData?.state || 'NOT PROVIDED');
+      console.log('   🌍 Country:', locationData?.country || 'NOT PROVIDED');
+      console.log('🌐 AudioRecorder - Selected language:', selectedLanguage);
+      console.log('💾 AudioRecorder - Storing detailed location data locally for AI requests');
 
       // Start the AI interaction session with basic location context and language
-      console.log('🚀 Starting AI interaction with location and language context...');
+      console.log('🚀 AudioRecorder - Calling startInteraction with:', {
+        basicLocation,
+        selectedLanguage
+      });
       startInteraction(basicLocation, selectedLanguage);
 
       setIsSharing(true);

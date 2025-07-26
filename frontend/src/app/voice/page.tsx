@@ -266,6 +266,18 @@ function VoicePageContent() {
             onAudioLevelChange={setCurrentAudioLevel}
             onSpeakingStateChange={setIsUserSpeaking}
           />
+          
+          {/* Debug Console Output */}
+          {detailedLocation && (
+            <div style={{ display: 'none' }}>
+              {console.log('🏠 VoicePage - Passing locationData to AudioShare:', {
+                city: detailedLocation.city,
+                state: detailedLocation.state,
+                country: detailedLocation.country,
+                fullObject: detailedLocation
+              })}
+            </div>
+          )}
         </div>
       </div>
 

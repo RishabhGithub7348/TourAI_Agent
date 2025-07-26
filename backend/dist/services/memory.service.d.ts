@@ -1,12 +1,14 @@
 import { AppConfigService } from '../config/config.service';
+import { PineconeService } from './pinecone.service';
 import { ConversationMessage, MemoryResult } from '../interfaces/conversation.interface';
 export declare class MemoryService {
     private configService;
+    private pineconeService;
     private readonly logger;
     private memory;
     private readonly FIXED_USER_ID;
     private readonly BOOKMARKS_DIR;
-    constructor(configService: AppConfigService);
+    constructor(configService: AppConfigService, pineconeService: PineconeService);
     private ensureBookmarksDirectory;
     getUserId(sessionId: string): string;
     addToMemory(messages: ConversationMessage[], userId: string, metadata?: any): Promise<string | null>;

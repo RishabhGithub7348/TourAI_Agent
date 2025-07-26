@@ -28,6 +28,18 @@ let AppConfigService = class AppConfigService {
     get websocketPort() {
         return this.configService.get('WEBSOCKET_PORT', 9084);
     }
+    get pineconeApiKey() {
+        return this.configService.get('PINECONE_API_KEY', '');
+    }
+    get pineconeEnvironment() {
+        return this.configService.get('PINECONE_ENVIRONMENT', 'us-east-1-aws');
+    }
+    get pineconeIndexName() {
+        return this.configService.get('PINECONE_INDEX_NAME', 'tour-bookmarks');
+    }
+    get openaiApiKey() {
+        return this.configService.get('OPENAI_API_KEY', '');
+    }
 };
 exports.AppConfigService = AppConfigService;
 exports.AppConfigService = AppConfigService = __decorate([

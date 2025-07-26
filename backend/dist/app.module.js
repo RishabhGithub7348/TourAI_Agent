@@ -12,6 +12,7 @@ const config_1 = require("@nestjs/config");
 const voice_gateway_1 = require("./gateways/voice.gateway");
 const gemini_service_1 = require("./services/gemini.service");
 const memory_service_1 = require("./services/memory.service");
+const pinecone_service_1 = require("./services/pinecone.service");
 const tools_service_1 = require("./services/tools.service");
 const config_service_1 = require("./config/config.service");
 const test_controller_1 = require("./controllers/test.controller");
@@ -29,6 +30,7 @@ exports.AppModule = AppModule = __decorate([
         controllers: [test_controller_1.TestController],
         providers: [
             config_service_1.AppConfigService,
+            pinecone_service_1.PineconeService,
             memory_service_1.MemoryService,
             tools_service_1.ToolsService,
             gemini_service_1.GeminiService,

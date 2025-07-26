@@ -61,7 +61,7 @@ export class GoogleMapsService {
       console.log(`🏠 Full address from Google: ${fullAddress}`);
       console.log(`🔧 Address components count: ${components?.length || 0}`);
 
-      const locationDetails = this.parseAddressComponents(components);
+      const locationDetails = this.parseAddressComponents(components, fullAddress);
       console.log(`📋 Parsed location details:`, locationDetails);
 
       const formattedForAI = this.formatForAI(locationDetails, fullAddress);
@@ -90,7 +90,7 @@ export class GoogleMapsService {
   /**
    * Parse Google Maps address components into structured data
    */
-  private static parseAddressComponents(components: any[]): any {
+  private static parseAddressComponents(components: any[], fullAddress: string = ''): any {
     console.log(`🔧 Parsing ${components?.length || 0} address components...`);
     
     const getComponent = (type: string) => {
@@ -100,11 +100,87 @@ export class GoogleMapsService {
       return result;
     };
 
+    // Enhanced city detection - prioritize main city over neighborhoods
+    const locality = getComponent('locality');
+    const adminLevel2 = getComponent('administrative_area_level_2');
+    const adminLevel3 = getComponent('administrative_area_level_3');
+    const sublocality = getComponent('sublocality') || getComponent('sublocality_level_1');
+    const neighborhood = getComponent('neighborhood');
+    
+    console.log(`🏙️ City detection analysis:`);
+    console.log(`  locality: ${locality}`);
+    console.log(`  administrative_area_level_2: ${adminLevel2}`);
+    console.log(`  administrative_area_level_3: ${adminLevel3}`);
+    console.log(`  sublocality: ${sublocality}`);
+    console.log(`  neighborhood: ${neighborhood}`);
+    
+    // Smart city selection: prefer administrative levels over locality for main cities
+    let mainCity = null;
+    let neighborhoodArea = null;
+    
+    // City name mapping for common administrative names to familiar city names
+    const cityMapping: { [key: string]: string } = {
+      'Bengaluru Urban': 'Bengaluru',
+      'Bangalore Urban': 'Bengaluru', 
+      'Mumbai Suburban': 'Mumbai',
+      'New Delhi': 'Delhi',
+      'Chennai': 'Chennai',
+      'Hyderabad': 'Hyderabad',
+      'Pune': 'Pune',
+      'Kolkata': 'Kolkata'
+    };
+    
+    // In India, admin_area_level_2 often contains the main city (like "Bengaluru Urban")
+    if (adminLevel2 && (adminLevel2.includes('Urban') || adminLevel2.includes('District') || cityMapping[adminLevel2])) {
+      mainCity = cityMapping[adminLevel2] || adminLevel2.replace(' Urban', '').replace(' District', '');
+      neighborhoodArea = locality || sublocality || neighborhood;
+      console.log(`  🎯 Using admin_level_2 as main city: ${mainCity} (mapped from ${adminLevel2})`);
+    }
+    // If admin_level_3 looks like a main city name or is mappable
+    else if (adminLevel3 && (adminLevel3.length > 3 || cityMapping[adminLevel3])) {
+      mainCity = cityMapping[adminLevel3] || adminLevel3;
+      neighborhoodArea = locality || sublocality || neighborhood;
+      console.log(`  🎯 Using admin_level_3 as main city: ${mainCity}`);
+    }
+    // Check if locality is actually a known main city
+    else if (locality && cityMapping[locality]) {
+      mainCity = cityMapping[locality];
+      neighborhoodArea = sublocality || neighborhood;
+      console.log(`  🎯 Using mapped locality as main city: ${mainCity}`);
+    }
+    // Special case: Check if full address contains a main city name
+    else if (fullAddress) {
+      const addressLower = fullAddress.toLowerCase();
+      if (addressLower.includes('bengaluru') || addressLower.includes('bangalore')) {
+        mainCity = 'Bengaluru';
+        neighborhoodArea = locality || sublocality || neighborhood;
+        console.log(`  🎯 Detected Bengaluru from full address: ${mainCity}`);
+      } else if (addressLower.includes('mumbai')) {
+        mainCity = 'Mumbai';
+        neighborhoodArea = locality || sublocality || neighborhood;
+        console.log(`  🎯 Detected Mumbai from full address: ${mainCity}`);
+      } else if (addressLower.includes('delhi')) {
+        mainCity = 'Delhi';
+        neighborhoodArea = locality || sublocality || neighborhood;
+        console.log(`  🎯 Detected Delhi from full address: ${mainCity}`);
+      } else {
+        mainCity = locality || adminLevel2;
+        neighborhoodArea = sublocality || neighborhood;
+        console.log(`  🎯 Using fallback as main city: ${mainCity}`);
+      }
+    }
+    // Final fallback
+    else {
+      mainCity = locality || adminLevel2;
+      neighborhoodArea = sublocality || neighborhood;
+      console.log(`  🎯 Using final fallback as main city: ${mainCity}`);
+    }
+
     const parsed = {
       streetNumber: getComponent('street_number'),
       streetName: getComponent('route'),
-      neighborhood: getComponent('neighborhood') || getComponent('sublocality'),
-      city: getComponent('locality') || getComponent('administrative_area_level_2'),
+      neighborhood: neighborhoodArea,
+      city: mainCity,
       state: getComponent('administrative_area_level_1'),
       country: getComponent('country'),
       postalCode: getComponent('postal_code'),

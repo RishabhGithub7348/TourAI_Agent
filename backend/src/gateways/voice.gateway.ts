@@ -208,12 +208,18 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const loc = data.location;
         const locationParts = [];
         
+        this.logger.log(`📍 Raw location data received for client ${client.id}:`, {
+          city: loc.city || 'NOT PROVIDED',
+          state: loc.state || 'NOT PROVIDED', 
+          country: loc.country || 'NOT PROVIDED'
+        });
+        
         if (loc.city) locationParts.push(loc.city);
         if (loc.state) locationParts.push(loc.state);
         if (loc.country) locationParts.push(loc.country);
         
         sessionData.location = locationParts.join(', ') || 'Unknown location';
-        this.logger.log(`🌍 Location received for client ${client.id}: ${sessionData.location}`);
+        this.logger.log(`🌍 Final processed location for client ${client.id}: ${sessionData.location}`);
       }
 
       // Store language preference if provided

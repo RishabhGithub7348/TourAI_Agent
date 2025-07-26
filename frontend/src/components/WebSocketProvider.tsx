@@ -403,11 +403,20 @@ import React, {
 
     const startInteraction = (locationData?: any, languageCode?: string) => {
       if (socketRef.current?.connected) {
-        console.log('Starting AI interaction with location:', locationData, 'language:', languageCode);
-        socketRef.current.emit('start_interaction', {
+        console.log('🚀 WebSocketProvider - Starting AI interaction');
+        console.log('📍 WebSocketProvider - Location data received:', locationData);
+        console.log('🗣️ WebSocketProvider - Language code:', languageCode);
+        
+        const payload = {
           location: locationData,
           language: languageCode || 'en-US'
-        });
+        };
+        
+        console.log('📦 WebSocketProvider - SENDING TO BACKEND:', JSON.stringify(payload, null, 2));
+        
+        socketRef.current.emit('start_interaction', payload);
+      } else {
+        console.error('❌ WebSocketProvider - Socket not connected, cannot start interaction');
       }
     };
 
