@@ -9,19 +9,27 @@ export declare class VoiceGateway implements OnGatewayConnection, OnGatewayDisco
     server: Server;
     private readonly logger;
     private sessions;
+    private readonly MAX_CONCURRENT_CONNECTIONS;
+    private activeGeminiSessions;
+    private logSessionStatus;
     constructor(geminiService: GeminiService, memoryService: MemoryService);
     handleConnection(client: Socket): Promise<void>;
     handleDisconnect(client: Socket): void;
     handleSetup(client: Socket, data: any): Promise<void>;
+    handleStartInteraction(client: Socket, data: any): Promise<void>;
+    handleStopInteraction(client: Socket, data: any): Promise<void>;
+    handleGetSessionStatus(client: Socket, data: any): Promise<void>;
     handleRealtimeInput(client: Socket, data: WebSocketMessage): Promise<void>;
     handleTextInput(client: Socket, data: {
         text: string;
     }): Promise<void>;
     private handleGeminiMessage;
+    private handleInterruption;
     private processAudioQueue;
     private waitForAudioTurnComplete;
     private combineAudioChunks;
     private handleGeminiFunctionCall;
     private startGeminiHandlers;
     private handleTurnComplete;
+    private createSessionOnDemand;
 }

@@ -9,6 +9,7 @@ export declare class ToolsService {
     getDirections(from: string, to: string, mode?: string): Promise<string>;
     getDiningRecommendations(location: string, cuisine?: string): Promise<string>;
     getTransportationOptions(from: string, to: string): Promise<string>;
+    private formatTourGuideResponse;
     getTourGuideTools(): {
         function_declarations: ({
             name: string;

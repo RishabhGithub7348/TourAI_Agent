@@ -16,7 +16,12 @@
       "Bash(npm run lint)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(npm run start:dev:*)",
+      "Bash(node:*)",
+      "WebSearch(*)",
+      "WebFetch(*)"
     ],
     "deny": []
   }

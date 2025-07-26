@@ -1,267 +1,450 @@
-'use client'
 
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
-import io, { Socket } from 'socket.io-client'
-
-interface WebSocketContextType {
-  socket: Socket | null
-  isConnected: boolean
-  sendMediaChunk: (audioData: string, mimeType: string) => void
-  sendTextMessage: (text: string) => void
-  audioLevel: number
-  isProcessing: boolean
-}
-
-const WebSocketContext = createContext<WebSocketContextType | null>(null)
-
-interface WebSocketProviderProps {
-  children: React.ReactNode
-  serverUrl: string
-  userId?: string
-  location?: string
-  onTextMessage?: (text: string) => void
-  onAudioMessage?: (audioData: string) => void
-  onError?: (error: string) => void
-}
-
-export function WebSocketProvider({
-  children,
-  serverUrl,
-  userId,
-  location,
-  onTextMessage,
-  onAudioMessage,
-  onError
-}: WebSocketProviderProps) {
-  const [socket, setSocket] = useState<Socket | null>(null)
-  const [isConnected, setIsConnected] = useState(false)
-  const [audioLevel, setAudioLevel] = useState(0)
-  const [isProcessing, setIsProcessing] = useState(false)
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+    useRef,
+    useCallback,
+  } from "react";
+  import { Base64 } from 'js-base64';
+  import { io, Socket } from 'socket.io-client';
   
-  // Audio processing similar to reference implementation
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const audioQueueRef = useRef<{ data: string; timestamp: number }[]>([])
-  const isPlayingRef = useRef(false)
-
-  useEffect(() => {
-    if (!userId) return
-
-    const newSocket = io(serverUrl, {
-      transports: ['websocket'],
-      timeout: 10000,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    })
-
-    newSocket.on('connect', () => {
-      console.log('Connected to voice backend')
-      setIsConnected(true)
-      
-      // Send setup configuration
-      newSocket.emit('setup', {
-        setup: {
-          user_id: userId,
-          session_type: 'voice_chat',
-          location: location || undefined
-        }
-      })
-    })
-
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from voice backend')
-      setIsConnected(false)
-      setIsProcessing(false)
-    })
-
-    newSocket.on('connect_error', (error) => {
-      console.error('Connection error:', error)
-      onError?.(`Connection error: ${error.message}`)
-    })
-
-    newSocket.on('text', (data) => {
-      console.log('Received text:', data.text)
-      onTextMessage?.(data.text)
-      setIsProcessing(false)
-    })
-
-    newSocket.on('audio', (data) => {
-      console.log('Received audio data, length:', data.audio?.length || 0)
-      if (data.audio) {
-        queueAudioForPlayback(data.audio)
-        onAudioMessage?.(data.audio)
-      }
-      setIsProcessing(false)
-    })
-
-    newSocket.on('setup_complete', (data) => {
-      console.log('Setup complete:', data)
-    })
-
-    newSocket.on('error', (error) => {
-      console.error('Socket error:', error)
-      onError?.(error.message || 'Socket error')
-      setIsProcessing(false)
-    })
-
-    setSocket(newSocket)
-
-    return () => {
-      newSocket.close()
-    }
-  }, [serverUrl, userId, location])
-
-  // Audio playback queue management (similar to reference)
-  const queueAudioForPlayback = (base64Audio: string) => {
-    audioQueueRef.current.push({
-      data: base64Audio,
-      timestamp: Date.now()
-    })
-
-    if (!isPlayingRef.current) {
-      processAudioQueue()
-    }
+  interface TranscriptionMessage {
+    text: string;
+    sender: "User" | "Gemini";
+    finished: boolean | null;
   }
 
-  const processAudioQueue = async () => {
-    if (audioQueueRef.current.length === 0 || isPlayingRef.current) {
-      return
-    }
-
-    isPlayingRef.current = true
-
-    try {
+  interface WebSocketContextType {
+    sendMessage: (message: { text?: string; [key: string]: unknown }) => void;
+    sendMediaChunk: (chunk: MediaChunk) => void;
+    startInteraction: (locationData?: any) => void;
+    stopInteraction: () => void;
+    getSessionStatus: () => void;
+    lastTranscription: TranscriptionMessage | null;
+    lastAudioData: string | null;
+    isConnected: boolean;
+    playbackAudioLevel: number;
+  }
+  
+  interface MediaChunk {
+    mime_type: string;
+    data: string;
+  }
+  
+  interface AudioChunkBuffer {
+    data: ArrayBuffer[];
+    startTimestamp: number;
+  }
+  
+  const WebSocketContext = createContext<WebSocketContextType | null>(null);
+  
+  const RECONNECT_TIMEOUT = 5000; // 5 seconds
+  const CONNECTION_TIMEOUT = 30000; // 30 seconds
+  const AUDIO_BUFFER_DURATION = 2000; // 2 seconds in milliseconds
+  const LOOPBACK_DELAY = 3000; // 3 seconds delay matching backend
+  
+  export const WebSocketProvider: React.FC<{ children: React.ReactNode; url: string }> = ({
+    children,
+    url,
+  }: { children: React.ReactNode; url: string }) => {
+    const [isConnected, setIsConnected] = useState(false);
+    const [playbackAudioLevel, setPlaybackAudioLevel] = useState(0);
+    const [lastTranscription, setLastTranscription] = useState<TranscriptionMessage | null>(null);
+    const [lastAudioData, setLastAudioData] = useState<string | null>(null);
+    const socketRef = useRef<Socket | null>(null);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const connectionTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const audioBufferQueueRef = useRef<AudioChunkBuffer[]>([]);
+    const currentChunkRef = useRef<AudioChunkBuffer | null>(null);
+    const playbackIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const reconnectAttemptsRef = useRef(0);
+    const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  
+    // Initialize audio context for playback
+    const initAudioContext = useCallback(() => {
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+        audioContextRef.current = new AudioContext({
+          sampleRate: 24000, // Match the server's 24kHz sample rate
+        });
       }
-
-      while (audioQueueRef.current.length > 0) {
-        const audioItem = audioQueueRef.current.shift()
-        if (audioItem) {
-          await playAudioData(audioItem.data)
-          
-          // Add small gap between audio chunks
-          await new Promise(resolve => setTimeout(resolve, 50))
-        }
+      return audioContextRef.current;
+    }, []);
+  
+    const connect = () => {
+      // Don't reconnect if already connecting or connected
+      if (socketRef.current && socketRef.current.connected) {
+        console.log("Socket already connected, skipping reconnect");
+        return;
       }
-    } catch (error) {
-      console.error('Error processing audio queue:', error)
-    } finally {
-      isPlayingRef.current = false
-    }
-  }
-
-  const playAudioData = async (base64Audio: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
+  
       try {
-        if (!audioContextRef.current) {
-          throw new Error('No audio context available')
-        }
+        const socket = io(url, {
+          transports: ['websocket'],
+          timeout: CONNECTION_TIMEOUT,
+        });
+        socketRef.current = socket;
+  
+        socket.on('connect', () => {
+          setIsConnected(true);
+          console.log("Socket connected, sending initial setup");
+          
+          // Send initial setup message
+          socket.emit('setup', {
+            setup: {
+              // Add any needed config options
+            }
+          });
+        });
+  
+        socket.on('disconnect', () => {
+          setIsConnected(false);
+          reconnect();
+        });
+  
+        socket.on('error', (error) => {
+          console.error('Socket error:', error);
+        });
 
-        // Convert base64 to ArrayBuffer
-        const binaryString = atob(base64Audio)
-        const bytes = new Uint8Array(binaryString.length)
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i)
+        socket.on('text', (data) => {
+          if (data.text) {
+            setLastTranscription({
+              text: data.text,
+              sender: 'Gemini',
+              finished: true
+            });
+          }
+        });
+
+        socket.on('transcription', (data) => {
+          if (data) {
+            setLastTranscription({
+              text: data.text,
+              sender: data.sender,
+              finished: data.finished
+            });
+          }
+        });
+  
+        socket.on('audio', (data) => {
+          if (data.audio) {
+            setLastAudioData(data.audio);
+            const audioBuffer = Base64.toUint8Array(data.audio);
+            
+            const now = Date.now();
+            const newChunk: AudioChunkBuffer = {
+              data: [audioBuffer.buffer as ArrayBuffer],
+              startTimestamp: now
+            };
+            
+            audioBufferQueueRef.current.push(newChunk);
+          }
+        });
+
+        socket.on('interrupted', () => {
+          console.log('Received interruption signal, stopping audio playback');
+          
+          if (currentAudioSourceRef.current) {
+            currentAudioSourceRef.current.stop();
+            currentAudioSourceRef.current = null;
+          }
+          audioBufferQueueRef.current = [];
+          setPlaybackAudioLevel(0);
+        });
+
+        // Handle new session events
+        socket.on('setup_complete', (data) => {
+          console.log('Setup complete:', data);
+        });
+
+        socket.on('interaction_started', (data) => {
+          console.log('AI interaction started:', data);
+        });
+
+        socket.on('interaction_stopped', (data) => {
+          console.log('AI interaction stopped:', data);
+        });
+
+        socket.on('session_created', (data) => {
+          console.log('AI session created automatically:', data);
+        });
+
+        socket.on('session_status', (data) => {
+          console.log('📊 Session Status:', data);
+          if (!data.counterAccurate) {
+            console.warn('⚠️ Session counter mismatch detected!', data);
+          }
+        });
+  
+      } catch (error) {
+        console.error('Socket connection error:', error);
+        reconnect();
+      }
+    };
+  
+    const sendBinary = (data: ArrayBuffer) => {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('binary', data);
+      }
+    };
+  
+    // Fix the audio playback approach
+    useEffect(() => {
+      let isPlaybackActive = false;
+      
+      // Function to play the next chunk when available
+      const playNextWhenReady = async () => {
+        if (isPlaybackActive || audioBufferQueueRef.current.length === 0) {
+          return;
         }
         
-        audioContextRef.current.decodeAudioData(
-          bytes.buffer.slice(0),
-          (audioBuffer) => {
-            const source = audioContextRef.current!.createBufferSource()
-            source.buffer = audioBuffer
-            source.connect(audioContextRef.current!.destination)
-            
-            source.onended = () => resolve()
-            source.start()
-          },
-          (error) => {
-            console.error('Error decoding audio:', error)
-            reject(error)
+        isPlaybackActive = true;
+        
+        try {
+          // Get all available chunks for a single playback
+          const allChunks = [...audioBufferQueueRef.current];
+          audioBufferQueueRef.current = [];
+          
+          // Combine all buffers from all chunks
+          const allBuffers: ArrayBuffer[] = [];
+          allChunks.forEach(chunk => {
+            allBuffers.push(...chunk.data);
+          });
+          
+          // Play the combined audio
+          await playAudioChunk(allBuffers);
+          
+          // Check if more chunks arrived during playback
+          if (audioBufferQueueRef.current.length > 0) {
+            // Continue playing without delay
+            playNextWhenReady();
           }
-        )
-      } catch (error) {
-        console.error('Error playing audio:', error)
-        reject(error)
+        } catch (error) {
+          console.error("Error in audio playback:", error);
+        } finally {
+          isPlaybackActive = false;
+        }
+      };
+      
+      // Set up a polling mechanism instead of overriding push
+      const checkInterval = setInterval(() => {
+        if (audioBufferQueueRef.current.length > 0 && !isPlaybackActive) {
+          playNextWhenReady();
+        }
+      }, 50);
+      
+      // Also check when new audio data is received
+      const originalPush = Array.prototype.push;
+      audioBufferQueueRef.current.push = function(...items) {
+        const result = originalPush.apply(this, items);
+        setTimeout(playNextWhenReady, 0);
+        return result;
+      };
+      
+      return () => {
+        clearInterval(checkInterval);
+        // Restore original push method
+        if (audioBufferQueueRef.current) {
+          audioBufferQueueRef.current.push = originalPush;
+        }
+      };
+    }, []);
+  
+    // New function to play concatenated audio chunks
+    const playAudioChunk = useCallback((audioBuffers: ArrayBuffer[]): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        try {
+          const ctx = initAudioContext();
+          
+          const totalLength = audioBuffers.reduce((acc, buffer) => 
+            acc + new Int16Array(buffer).length, 0);
+          
+          if (totalLength === 0) {
+            return resolve();
+          }
+          
+          const combinedInt16Array = new Int16Array(totalLength);
+          let offset = 0;
+          
+          audioBuffers.forEach(buffer => {
+            const int16Data = new Int16Array(buffer);
+            combinedInt16Array.set(int16Data, offset);
+            offset += int16Data.length;
+          });
+          
+          const audioBuffer = ctx.createBuffer(1, totalLength, 24000);
+          const channelData = audioBuffer.getChannelData(0);
+          
+          // Improved smoothing
+          for (let i = 0; i < totalLength; i++) {
+            channelData[i] = combinedInt16Array[i] / 32768.0;
+          }
+          
+          // Longer fade for smoother transitions
+          const fadeSamples = Math.min(200, totalLength / 8);
+          
+          // Fade in
+          for (let i = 0; i < fadeSamples; i++) {
+            const factor = Math.sin((i / fadeSamples) * Math.PI / 2); // Smoother sine curve
+            channelData[i] *= factor;
+          }
+          
+          // Fade out
+          for (let i = 0; i < fadeSamples; i++) {
+            const factor = Math.sin((i / fadeSamples) * Math.PI / 2);
+            channelData[totalLength - 1 - i] *= factor;
+          }
+          
+          const source = ctx.createBufferSource();
+          currentAudioSourceRef.current = source; // Store the current source
+          const gainNode = ctx.createGain();
+          gainNode.gain.value = 1.5;
+          
+          source.buffer = audioBuffer;
+          source.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          
+          const durationMs = (audioBuffer.length / audioBuffer.sampleRate) * 1000;
+          
+          source.start();
+          
+          // Simple random movement simulation for playback level indicator
+          const simulateLevel = () => {
+            // Generate random number between 20-40 to simulate gentle movement
+            const randomLevel = 20 + Math.floor(Math.random() * 20);
+            setPlaybackAudioLevel(randomLevel);
+          };
+          
+          // Update level every 200ms while audio is playing
+          const levelInterval = setInterval(simulateLevel, 200);
+          
+          // Clean up interval and reset level when audio finishes
+          setTimeout(() => {
+            clearInterval(levelInterval);
+            setPlaybackAudioLevel(0); // Reset to zero after playback
+            currentAudioSourceRef.current = null; // Clear the current source
+            resolve();
+          }, durationMs);
+          
+          source.onended = () => {
+            clearInterval(levelInterval);
+            setPlaybackAudioLevel(0); // Also reset to zero if source ends early
+            currentAudioSourceRef.current = null; // Clear the current source
+            resolve();
+          };
+          
+        } catch (error) {
+          console.error('Error playing audio:', error);
+          reject(error);
+        }
+      });
+    }, [initAudioContext]);
+  
+    const reconnect = () => {
+      // Only schedule reconnect if not already scheduled
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
       }
-    })
-  }
-
-  const sendMediaChunk = (audioData: string, mimeType: string = 'audio/pcm') => {
-    if (!socket || !isConnected) {
-      console.warn('Cannot send audio: not connected')
-      return
-    }
-
-    setIsProcessing(true)
-    
-    socket.emit('realtime_input', {
-      realtime_input: {
-        media_chunks: [{
-          mime_type: mimeType,
-          data: audioData
-        }]
+      
+      // Use exponential backoff for reconnection attempts
+      const backoffTime = Math.min(30000, RECONNECT_TIMEOUT * (reconnectAttemptsRef.current || 1));
+      console.log(`Scheduling reconnect in ${backoffTime}ms`);
+      
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectAttemptsRef.current = (reconnectAttemptsRef.current || 0) + 1;
+        connect();
+      }, backoffTime);
+    };
+  
+    useEffect(() => {
+      connect();
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+        }
+      };
+    }, [url, playAudioChunk]);
+  
+    useEffect(() => {
+      if (isConnected) {
+        reconnectAttemptsRef.current = 0;
       }
-    })
-
-    console.log('Sent audio chunk:', { mimeType, dataLength: audioData.length })
-  }
-
-  const sendTextMessage = (text: string) => {
-    if (!socket || !isConnected) {
-      console.warn('Cannot send text: not connected')
-      return
-    }
-
-    setIsProcessing(true)
-    socket.emit('text', { text })
-    console.log('Sent text message:', text)
-  }
-
-  // Simulate audio level for UI (similar to reference)
-  useEffect(() => {
-    let animationFrame: number
-
-    const updateAudioLevel = () => {
-      if (isProcessing) {
-        setAudioLevel(Math.random() * 0.5 + 0.3) // Simulate activity
-        animationFrame = requestAnimationFrame(updateAudioLevel)
-      } else {
-        setAudioLevel(0)
+    }, [isConnected]);
+  
+    const sendMessage = (message: { text?: string; [key: string]: unknown }) => {
+      if (socketRef.current?.connected) {
+        if (message.text) {
+          socketRef.current.emit('text', { text: message.text });
+        } else {
+          socketRef.current.emit('message', message);
+        }
       }
-    }
-
-    if (isProcessing) {
-      updateAudioLevel()
-    }
-
-    return () => {
-      if (animationFrame) {
-        cancelAnimationFrame(animationFrame)
+    };
+  
+    const sendMediaChunk = (chunk: MediaChunk) => {
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('realtime_input', {
+          realtime_input: {
+            media_chunks: [chunk]
+          }
+        });
       }
+    };
+
+    const startInteraction = (locationData?: any) => {
+      if (socketRef.current?.connected) {
+        console.log('Starting AI interaction with location:', locationData);
+        socketRef.current.emit('start_interaction', {
+          location: locationData
+        });
+      }
+    };
+
+    const stopInteraction = () => {
+      if (socketRef.current?.connected) {
+        console.log('Stopping AI interaction...');
+        socketRef.current.emit('stop_interaction', {});
+      }
+    };
+
+    const getSessionStatus = () => {
+      if (socketRef.current?.connected) {
+        console.log('Requesting session status...');
+        socketRef.current.emit('get_session_status', {});
+      }
+    };
+  
+    return (
+      <WebSocketContext.Provider 
+        value={{ 
+          sendMessage,
+          sendMediaChunk,
+          startInteraction,
+          stopInteraction,
+          getSessionStatus,
+          lastTranscription,
+          lastAudioData,
+          isConnected,
+          playbackAudioLevel
+        }}
+      >
+        {children}
+      </WebSocketContext.Provider>
+    );
+  };
+  
+  export const useWebSocket = () => {
+    const context = useContext(WebSocketContext);
+    if (!context) {
+      throw new Error("useWebSocket must be used within a WebSocketProvider");
     }
-  }, [isProcessing])
-
-  const contextValue: WebSocketContextType = {
-    socket,
-    isConnected,
-    sendMediaChunk,
-    sendTextMessage,
-    audioLevel,
-    isProcessing
-  }
-
-  return (
-    <WebSocketContext.Provider value={contextValue}>
-      {children}
-    </WebSocketContext.Provider>
-  )
-}
-
-export const useWebSocketContext = () => {
-  const context = useContext(WebSocketContext)
-  if (!context) {
-    throw new Error('useWebSocketContext must be used within a WebSocketProvider')
-  }
-  return context
-}
+    return context;
+  };

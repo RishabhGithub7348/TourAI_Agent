@@ -40,6 +40,18 @@ let MemoryService = MemoryService_1 = class MemoryService {
             return null;
         }
     }
+    addToMemoryAsync(messages, userId, metadata) {
+        const defaultMetadata = { category: 'tour_session' };
+        const finalMetadata = metadata || defaultMetadata;
+        this.logger.log(`Adding to memory async: ${JSON.stringify(messages)}, user_id: ${userId}`);
+        this.memory.add(messages, { user_id: userId })
+            .then(result => {
+            this.logger.log(`Async memory added: ${JSON.stringify(result)}`);
+        })
+            .catch(error => {
+            this.logger.error(`Error in async memory addition: ${error.message}`);
+        });
+    }
     async queryMemory(query, userId) {
         try {
             const response = await this.memory.search(query, { user_id: userId });

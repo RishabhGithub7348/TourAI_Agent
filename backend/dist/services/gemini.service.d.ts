@@ -9,12 +9,26 @@ export declare class GeminiService {
     private client;
     private readonly MODEL;
     constructor(configService: AppConfigService, memoryService: MemoryService, toolsService: ToolsService);
+    private getDefaultTools;
     createLiveSession(config?: any, messageHandler?: (data: any) => void): Promise<{
         originalSession: import("@google/genai").Session;
         responseQueue: any[];
         waitMessage: () => Promise<any>;
+        handleTurn: () => Promise<any[]>;
         sendClientContent: (data: any) => void;
         sendRealtimeInput: (data: any) => void;
+        sendAudioStreamEnd: () => void;
+        sendToolResponse: (data: any) => void;
+        close: () => void;
+    }>;
+    createLiveSessionWithTools(tools: any[], additionalConfig?: any, messageHandler?: (data: any) => void): Promise<{
+        originalSession: import("@google/genai").Session;
+        responseQueue: any[];
+        waitMessage: () => Promise<any>;
+        handleTurn: () => Promise<any[]>;
+        sendClientContent: (data: any) => void;
+        sendRealtimeInput: (data: any) => void;
+        sendAudioStreamEnd: () => void;
         sendToolResponse: (data: any) => void;
         close: () => void;
     }>;

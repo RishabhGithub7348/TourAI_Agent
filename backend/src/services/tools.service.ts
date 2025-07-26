@@ -60,7 +60,18 @@ export class ToolsService {
         return `No tourist attractions found near ${location} within ${radius}km radius.`;
       }
 
-      return `🏛️ Top attractions near ${location} (within ${radius}km):\n${attractions.join('\n')}`;
+      const tips = [
+        'Check opening hours and ticket prices before visiting',
+        'Consider visiting popular attractions early morning or late afternoon',
+        'Look for combo tickets that include multiple attractions',
+        'Download offline maps in case of poor internet connection'
+      ];
+      
+      return this.formatTourGuideResponse(
+        `Top Attractions Near ${location}`,
+        `Found ${attractions.length} amazing places within ${radius}km:\n\n${attractions.join('\n')}`,
+        tips
+      );
     } catch (error) {
       this.logger.error(`Error getting attractions for ${location}: ${error.message}`);
       return `Unable to get attractions for ${location}. Please try again later.`;
@@ -126,14 +137,27 @@ export class ToolsService {
         'cycling': '🚲'
       };
 
-      return `${modeEmoji[mode] || '🚶'} Directions from ${from} to ${to} (${mode}):
-📍 Distance: ${leg.distance.text}
-⏱️ Duration: ${leg.duration.text}
+      const content = `📍 **Distance:** ${leg.distance.text}
+⏱️ **Duration:** ${leg.duration.text}
+🚶 **Mode:** ${mode.charAt(0).toUpperCase() + mode.slice(1)}
 
-Step-by-step directions:
+**Step-by-step directions:**
 ${steps.join('\n')}
 
 ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} more steps` : ''}`;
+
+      const tips = [
+        'Check traffic conditions before starting your journey',
+        'Keep your phone charged for navigation',
+        'Have a backup route in mind',
+        'Consider weather conditions that might affect travel time'
+      ];
+
+      return this.formatTourGuideResponse(
+        `Directions from ${from} to ${to}`,
+        content,
+        tips
+      );
     } catch (error) {
       this.logger.error(`Error getting directions from ${from} to ${to}: ${error.message}`);
       return `Unable to get directions from ${from} to ${to}. Please check the locations and try again.`;
@@ -195,10 +219,20 @@ ${steps.length < leg.steps.length ? `... and ${leg.steps.length - steps.length} 
       }
 
       const cuisineText = cuisine ? ` ${cuisine}` : '';
-      return `🍽️ Recommended${cuisineText} restaurants near ${location}:
-${restaurants.join('\n')}
+      const content = `Found ${restaurants.length} excellent${cuisineText} restaurants:\n\n${restaurants.join('\n')}\n\n**Legend:** ⭐ Rating | 💰 Price level | 🟢 Open now | 🔴 Closed`;
+      
+      const tips = [
+        'Make reservations for popular restaurants, especially on weekends',
+        'Check recent reviews and current menu online',
+        'Ask about daily specials and local dishes',
+        'Consider dietary restrictions and inform the restaurant ahead'
+      ];
 
-Legend: ⭐ Rating | 💰 Price level | 🟢 Open now | 🔴 Closed`;
+      return this.formatTourGuideResponse(
+        `Dining Recommendations${cuisineText ? ` - ${cuisine.charAt(0).toUpperCase() + cuisine.slice(1)}` : ''} Near ${location}`,
+        content,
+        tips
+      );
     } catch (error) {
       this.logger.error(`Error getting dining recommendations for ${location}: ${error.message}`);
       return `Unable to get dining recommendations for ${location}. Please try again later.`;
@@ -260,14 +294,40 @@ Legend: ⭐ Rating | 💰 Price level | 🟢 Open now | 🔴 Closed`;
         return `No transportation options found from ${from} to ${to}. Please check the locations and try again.`;
       }
 
-      return `🚊 Transportation options from ${from} to ${to}:\n${results.join('\n')}`;
+      const content = `Here are all available transportation methods:\n\n${results.join('\n')}`;
+      
+      const tips = [
+        'Compare costs and convenience for your specific needs',
+        'Check for any seasonal service changes or disruptions',
+        'Consider combining different modes for optimal travel',
+        'Book tickets in advance for public transit when possible'
+      ];
+
+      return this.formatTourGuideResponse(
+        `Transportation Options from ${from} to ${to}`,
+        content,
+        tips
+      );
     } catch (error) {
       this.logger.error(`Error getting transportation options: ${error.message}`);
       return `Unable to get transportation options from ${from} to ${to}. Please try again later.`;
     }
   }
 
-  // Get tour guide tools configuration for Gemini
+  // Enhanced presentation formatting for tour guide responses
+  private formatTourGuideResponse(title: string, content: string, tips?: string[]): string {
+    let response = `🌟 ${title}\n${'='.repeat(title.length + 4)}\n\n${content}`;
+    
+    if (tips && tips.length > 0) {
+      response += `\n\n💡 **Pro Tips:**\n${tips.map(tip => `• ${tip}`).join('\n')}`;
+    }
+    
+    response += `\n\n---\n*I'm here to help make your travel experience amazing! Ask me anything else about your destination.*`;
+    
+    return response;
+  }
+
+  // Get enhanced tour guide tools configuration for Gemini
   getTourGuideTools() {
     return {
       function_declarations: [

@@ -1,270 +1,288 @@
-'use client'
+import React, { useRef, useState, useEffect } from "react";
+import { Button } from "./ui/button";
+import { ScrollArea } from "./ui/scroll-area";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Progress } from "./ui/progress";
+import { useWebSocket } from "./WebSocketProvider";
+import { Base64 } from 'js-base64';
 
-import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Mic, MicOff, Square } from 'lucide-react'
-import { useWebSocketContext } from './WebSocketProvider'
-
-interface AudioRecorderProps {
-  onRecordingStart?: () => void
-  onRecordingStop?: () => void
-  onAudioData?: (audioData: string) => void
+interface ChatMessage {
+  text: string;
+  sender: "User" | "Gemini";
+  timestamp: string;
+  isComplete: boolean;
 }
 
-export function AudioRecorder({
-  onRecordingStart,
-  onRecordingStop,
-  onAudioData
-}: AudioRecorderProps) {
-  const [isRecording, setIsRecording] = useState(false)
-  const [audioLevel, setAudioLevel] = useState(0)
-  const { sendMediaChunk, isConnected, isProcessing } = useWebSocketContext()
+interface AudioShareProps {
+  locationData?: any;
+  isLocationReady?: boolean;
+  locationError?: string | null;
+}
+
+const AudioShare: React.FC<AudioShareProps> = ({ 
+  locationData, 
+  isLocationReady = false, 
+  locationError = null 
+}) => {
+  console.log('🎬 AudioShare component is rendering...');
   
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const animationFrameRef = useRef<number | undefined>(undefined)
-  const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [detailedLocationData, setDetailedLocationData] = useState<any>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([{
+    text: "Audio sharing session started. I'll transcribe what I hear.",
+    sender: "Gemini",
+    timestamp: new Date().toLocaleTimeString(),
+    isComplete: true
+  }]);
 
-  // Helper functions for audio processing (defined first to avoid circular dependency)
-  const float32ToInt16 = useCallback((float32Array: Float32Array): Int16Array => {
-    const int16Array = new Int16Array(float32Array.length)
-    
-    for (let i = 0; i < float32Array.length; i++) {
-      const clampedValue = Math.max(-1, Math.min(1, float32Array[i]))
-      int16Array[i] = clampedValue * 0x7FFF
+  const { sendMessage, sendMediaChunk, startInteraction, stopInteraction, isConnected, playbackAudioLevel, lastTranscription } = useWebSocket();
+
+  // Store detailed location data when received
+  useEffect(() => {
+    if (locationData) {
+      setDetailedLocationData(locationData);
+      console.log('💾 Stored detailed location data locally:', locationData);
     }
-    
-    return int16Array
-  }, [])
+  }, [locationData]);
 
-  const arrayBufferToBase64 = useCallback((buffer: ArrayBufferLike): string => {
-    const bytes = new Uint8Array(buffer)
-    let binary = ''
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i])
+  // Log received props for debugging
+  useEffect(() => {
+    console.log('🎬 AudioRecorder received props:', {
+      hasLocationData: !!locationData,
+      isLocationReady,
+      locationError,
+      basicLocation: locationData ? { country: locationData.country, state: locationData.state } : null
+    });
+  }, [locationData, isLocationReady, locationError]);
+
+  // Handle incoming transcriptions
+  useEffect(() => {
+    if (lastTranscription) {
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1];
+        const shouldUpdateLast = lastMessage &&
+          lastMessage.sender === lastTranscription.sender &&
+          !lastMessage.isComplete;
+
+        if (shouldUpdateLast) {
+          const updatedMessages = [...prev];
+          updatedMessages[updatedMessages.length - 1] = {
+            ...lastMessage,
+            text: lastMessage.text + lastTranscription.text,
+            isComplete: lastTranscription.finished === true
+          };
+          return updatedMessages;
+        }
+
+        const newMessage = {
+          text: lastTranscription.text,
+          sender: lastTranscription.sender,
+          timestamp: new Date().toLocaleTimeString(),
+          isComplete: lastTranscription.finished === true
+        };
+        return [...prev, newMessage];
+      });
     }
-    return btoa(binary)
-  }, [])
+  }, [lastTranscription]);
 
-  // Audio processing using Web Audio API for real-time PCM data
-  const startRecording = useCallback(async () => {
+  const startSharing = async () => {
+    if (isSharing) return;
+
     try {
-      console.log('Starting audio recording...')
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // Get audio stream
+      const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 16000,
-          channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 16000
         }
-      })
+      });
 
-      streamRef.current = stream
-
-      // Create audio context for processing
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+      // Set up audio context and processing
+      audioContextRef.current = new AudioContext({
         sampleRate: 16000,
         latencyHint: 'interactive'
-      })
+      });
 
-      // Create audio source and analyzer
-      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream)
-      analyserRef.current = audioContextRef.current.createAnalyser()
-      analyserRef.current.fftSize = 256
-      
-      // Create script processor for real-time audio processing
-      const bufferSize = 4096 // Process in chunks
-      processorRef.current = audioContextRef.current.createScriptProcessor(bufferSize, 1, 1)
-      
-      processorRef.current.onaudioprocess = (event) => {
-        if (!isRecording) return
-        
-        const inputBuffer = event.inputBuffer
-        const channelData = inputBuffer.getChannelData(0) // Mono audio
-        
-        // Convert float32 to int16 PCM
-        const pcmData = float32ToInt16(channelData)
-        
-        // Convert to base64 and send
-        const base64Data = arrayBufferToBase64(pcmData.buffer)
-        sendMediaChunk(base64Data, 'audio/pcm')
-        onAudioData?.(base64Data)
-      }
-      
-      // Connect the audio graph
-      sourceRef.current.connect(analyserRef.current)
-      sourceRef.current.connect(processorRef.current)
-      processorRef.current.connect(audioContextRef.current.destination)
+      const ctx = audioContextRef.current;
+      await ctx.audioWorklet.addModule('/worklets/audio-processor.js');
+      const source = ctx.createMediaStreamSource(audioStream);
 
-      // Start visual feedback
-      updateAudioLevel()
+      audioWorkletNodeRef.current = new AudioWorkletNode(ctx, 'audio-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        processorOptions: {
+          sampleRate: 16000,
+          bufferSize: 4096,
+        },
+        channelCount: 1,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'speakers'
+      });
 
-      setIsRecording(true)
-      onRecordingStart?.()
-      
-      console.log('Recording started successfully')
-      
-    } catch (error) {
-      console.error('Error starting recording:', error)
-      if (error instanceof Error) {
-        if (error.name === 'NotAllowedError') {
-          console.error('Microphone access denied')
-        } else if (error.name === 'NotFoundError') {
-          console.error('No microphone found')
+      // Set up audio processing
+      audioWorkletNodeRef.current.port.onmessage = (event) => {
+        const { pcmData, level } = event.data;
+        setAudioLevel(level);
+
+        if (pcmData) {
+          const base64Data = Base64.fromUint8Array(new Uint8Array(pcmData));
+          sendMediaChunk({
+            mime_type: "audio/pcm",
+            data: base64Data
+          });
         }
-      }
+      };
+
+      source.connect(audioWorkletNodeRef.current);
+      audioStreamRef.current = audioStream;
+
+      // Extract only basic location data - let AI ask for more details when needed
+      console.log('✅ Extracting basic location from parent component data...');
+      const basicLocation = locationData ? {
+        country: locationData.country,
+        state: locationData.state
+      } : null;
+      
+      console.log('📋 Basic location for AI:', basicLocation);
+      console.log('💾 Storing detailed location data locally for AI requests');
+
+      // Start the AI interaction session with basic location context
+      console.log('🚀 Starting AI interaction with basic location context...');
+      startInteraction(basicLocation);
+
+      setIsSharing(true);
+    } catch (err) {
+      console.error('Failed to start audio sharing:', err);
+      stopSharing();
     }
-  }, [sendMediaChunk, onRecordingStart, onAudioData, isRecording, float32ToInt16, arrayBufferToBase64])
+  };
 
-  const stopRecording = useCallback(() => {
-    console.log('Stopping recording...')
+  const stopSharing = () => {
+    // Stop the AI interaction session when user stops recording
+    stopInteraction();
 
-    if (processorRef.current) {
-      processorRef.current.disconnect()
-      processorRef.current = null
+    // Stop audio stream
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
     }
 
-    if (sourceRef.current) {
-      sourceRef.current.disconnect()
-      sourceRef.current = null
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
-        track.stop()
-      })
+    // Clean up audio processing
+    if (audioWorkletNodeRef.current) {
+      audioWorkletNodeRef.current.disconnect();
+      audioWorkletNodeRef.current = null;
     }
 
     if (audioContextRef.current) {
-      audioContextRef.current.close()
+      audioContextRef.current.close();
+      audioContextRef.current = null;
     }
 
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current)
-    }
-
-    setIsRecording(false)
-    setAudioLevel(0)
-    onRecordingStop?.()
-    
-    console.log('Recording stopped')
-  }, [isRecording, onRecordingStop])
-
-  // Audio level visualization
-  const updateAudioLevel = useCallback(() => {
-    if (!analyserRef.current || !isRecording) {
-      return
-    }
-
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-    analyserRef.current.getByteFrequencyData(dataArray)
-    
-    const average = dataArray.reduce((a, b) => a + b) / dataArray.length
-    setAudioLevel(average / 255)
-
-    if (isRecording) {
-      animationFrameRef.current = requestAnimationFrame(updateAudioLevel)
-    }
-  }, [isRecording])
-
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording()
-    } else {
-      startRecording()
-    }
-  }
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      // Direct cleanup without calling callbacks to avoid infinite loops
-      if (processorRef.current) {
-        processorRef.current.disconnect()
-      }
-
-      if (sourceRef.current) {
-        sourceRef.current.disconnect()
-      }
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => {
-          track.stop()
-        })
-      }
-
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-      }
-
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
-      }
-    }
-  }, [])
+    setIsSharing(false);
+    setAudioLevel(0);
+  };
 
   return (
-    <div className="flex flex-col items-center space-y-4">
-      {/* Audio Level Visualizer */}
-      {isRecording && (
-        <div className="flex items-center space-x-2">
-          {[...Array(5)].map((_, i) => (
-            <motion.div
-              key={i}
-              className="w-1 bg-blue-400 rounded-full"
-              animate={{
-                height: [10, Math.max(10, audioLevel * 50 + Math.random() * 20), 10],
-              }}
-              transition={{
-                duration: 0.3,
-                repeat: Infinity,
-                delay: i * 0.1,
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Recording Button */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={toggleRecording}
-        disabled={!isConnected || isProcessing}
-        className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 ${
-          isRecording
-            ? 'bg-red-500 shadow-lg shadow-red-500/50'
-            : 'bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/50'
-        } ${!isConnected || isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-      >
-        {isRecording ? (
-          <motion.div
-            animate={{ scale: [1, 1.2, 1] }}
-            transition={{ duration: 1, repeat: Infinity }}
-          >
-            <Square className="w-6 h-6 text-white" fill="currentColor" />
-          </motion.div>
-        ) : (
-          <Mic className="w-6 h-6 text-white" />
-        )}
-      </motion.button>
-
-      {/* Status */}
-      <div className="text-center">
-        <p className="text-sm text-gray-400">
-          {isRecording ? 'Recording...' : 'Click to record'}
+    <div className="container mx-auto p-6 space-y-6 max-w-3xl">
+      {/* Welcome Header */}
+      <div className="text-center space-y-2">
+        <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
+          Gemini Audio Learning Assistant
+        </h1>
+        <p className="text-xl text-muted-foreground">
+          Share your audio and talk to me
         </p>
-        {!isConnected && (
-          <p className="text-xs text-red-400">Not connected</p>
-        )}
-        {isProcessing && (
-          <p className="text-xs text-yellow-400">Processing...</p>
-        )}
       </div>
+
+      {/* Audio Controls */}
+      <Card className="w-full md:w-[640px] mx-auto">
+        <CardContent className="p-6">
+          <div className="flex flex-col items-center space-y-4">
+            {/* Audio Level Indicator */}
+            {isSharing && (
+              <div className="w-full space-y-2">
+                <Progress
+                  value={Math.max(audioLevel, playbackAudioLevel)}
+                  className="h-1 bg-white"
+                  indicatorClassName="bg-black"
+                />
+              </div>
+            )}
+
+            {!isSharing ? (
+              <div className="flex flex-col items-center space-y-2">
+                <Button
+                  size="lg"
+                  onClick={startSharing}
+                  disabled={!isConnected}
+                  variant={isConnected ? "default" : "outline"}
+                  className={!isConnected ? "border-red-300 text-red-700" : ""}
+                >
+                  {!isConnected 
+                    ? "Connecting to server..."
+                    : "Start Audio Share"
+                  }
+                </Button>
+                {locationError && (
+                  <p className="text-sm text-yellow-600">
+                    ⚠️ {locationError}
+                  </p>
+                )}
+                {isLocationReady && (
+                  <p className="text-sm text-green-600">
+                    ✅ Location ready
+                  </p>
+                )}
+              </div>
+            ) : (
+              <Button size="lg" variant="destructive" onClick={stopSharing}>
+                Stop Sharing
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Chat History */}
+      <Card className="w-full md:w-[640px] mx-auto">
+        <CardHeader>
+          <CardTitle>Chat History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[400px] pr-4">
+            <div className="space-y-4">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className="flex items-start space-x-4 rounded-lg p-4 bg-muted/50"
+                >
+                  <div className="h-8 w-8 rounded-full flex items-center justify-center bg-primary">
+                    <span className="text-xs font-medium text-primary-foreground">
+                      {message.sender === "Gemini" ? "AI" : "You"}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm leading-loose">{message.text}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {message.timestamp}
+                      {!message.isComplete && " (typing...)"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
     </div>
-  )
-}
+  );
+};
+
+export default AudioShare;

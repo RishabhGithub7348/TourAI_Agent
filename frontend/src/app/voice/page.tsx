@@ -1,109 +1,131 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { useUser, SignOutButton } from '@clerk/nextjs'
+import { useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { 
-  Send, 
-  User, 
-  Bot, 
-  Home,
   MapPin,
   Bookmark,
-  Book,
-  LogOut,
-  RefreshCw
+  Book
 } from 'lucide-react'
 import { useGeolocation } from '@/hooks/useGeolocation'
-import { WebSocketProvider, useWebSocketContext } from '@/components/WebSocketProvider'
-import { AudioRecorder } from '@/components/AudioRecorder'
+import { WebSocketProvider, useWebSocket } from '@/components/WebSocketProvider'
+import AudioShare from '@/components/AudioRecorder'
 import { Bookmarks } from '@/components/voice/Bookmarks'
 import { StoryMode } from '@/components/voice/StoryMode'
+import { GoogleMapsService } from '@/services/googleMapsService'
+import { LocationService } from '@/services/locationService'
 
-interface Message {
-  id: string
-  type: 'user' | 'assistant'
-  content: string
-  timestamp: Date
-  isAudio?: boolean
-}
 
 function VoicePageContent() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [textInput, setTextInput] = useState('')
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false)
   const [isStoryModeOpen, setIsStoryModeOpen] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Location state management
+  const [detailedLocation, setDetailedLocation] = useState<any>(null)
+  const [isExtractingLocation, setIsExtractingLocation] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
 
   // Get WebSocket context
-  const { isConnected, isProcessing, sendTextMessage } = useWebSocketContext()
+  const { isConnected } = useWebSocket()
   
   // Geolocation hook
-  const { error: locationError, loading: locationLoading, locationString, getCurrentPosition, isSupported } = useGeolocation()
+  const { position, loading: locationLoading, locationString, getCurrentPosition, isSupported } = useGeolocation()
 
-  // Message handlers
-  const handleTextMessage = (text: string) => {
-    addMessage('assistant', text)
-  }
-
-  const handleAudioMessage = (audioData: string) => {
-    addMessage('assistant', '🔊 Audio response received', true)
-  }
-
-  const handleError = (error: string) => {
-    setErrorMessage(error)
-    addMessage('assistant', `Error: ${error}`)
-  }
-
-  // Clear error message after some time
+  // Request location when component mounts
   useEffect(() => {
-    if (errorMessage) {
-      const timer = setTimeout(() => setErrorMessage(null), 5000)
-      return () => clearTimeout(timer)
-    }
-  }, [errorMessage])
+    console.log('🚀 Voice page mounted, requesting user location...');
+    getCurrentPosition();
+  }, []); // Empty dependency array to run only once on mount
 
-
-  // Auto scroll to bottom
+  // Extract detailed location when position becomes available
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const extractLocationDetails = async () => {
+      if (!position || isExtractingLocation || detailedLocation) {
+        return // Skip if no position, already extracting, or already have data
+      }
 
-  const addMessage = (type: 'user' | 'assistant', content: string, isAudio = false) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      type,
-      content,
-      timestamp: new Date(),
-      isAudio
+      console.log('🌍 Starting location extraction from voice page...')
+      setIsExtractingLocation(true)
+      setLocationError(null)
+
+      try {
+        console.log(`📍 User coordinates: ${position.latitude}, ${position.longitude}`)
+        console.log(`🎯 Position accuracy: ${position.accuracy}m`)
+        
+        // First try Google Maps API for precise location
+        console.log('🚀 Attempting Google Maps API location extraction...')
+        const exactLocation = await GoogleMapsService.getExactLocationFromCoordinates(
+          position.latitude, 
+          position.longitude
+        )
+
+        if (exactLocation) {
+          console.log('✅ Google Maps API extraction successful!')
+          console.log('📋 Extracted location details:', exactLocation)
+          
+          // Get nearby places for additional context
+          console.log('🎯 Searching for nearby tourist attractions...')
+          const nearbyPlaces = await GoogleMapsService.getNearbyPlaces(
+            position.latitude,
+            position.longitude,
+            1000, // 1km radius
+            'tourist_attraction'
+          )
+
+          const extractedLocationData = {
+            exactAddress: exactLocation.fullAddress,
+            city: exactLocation.city,
+            state: exactLocation.state,
+            country: exactLocation.country,
+            neighborhood: exactLocation.neighborhood,
+            landmark: exactLocation.landmark,
+            formattedForAI: exactLocation.formattedForAI,
+            nearbyAttractions: nearbyPlaces,
+            postalCode: exactLocation.postalCode
+          }
+
+          console.log('🎊 Final location data assembled:', extractedLocationData)
+          console.log(`🤖 AI will receive: "${exactLocation.formattedForAI}"`)
+          
+          setDetailedLocation(extractedLocationData)
+        } else {
+          // Fallback to basic location service
+          console.log('🔄 Google Maps failed, falling back to basic location service...')
+          const locationDetails = await LocationService.getLocationDetails(
+            position.latitude, 
+            position.longitude
+          )
+          
+          console.log('📍 Basic location details:', locationDetails)
+          
+          const fallbackLocationData = {
+            exactAddress: locationString || LocationService.formatLocation(locationDetails),
+            city: locationDetails.city,
+            country: locationDetails.country,
+            formattedForAI: locationString || LocationService.formatLocation(locationDetails)
+          }
+          
+          console.log('🔄 Fallback location data:', fallbackLocationData)
+          setDetailedLocation(fallbackLocationData)
+        }
+      } catch (error) {
+        console.warn('❌ All location services failed during extraction:', error)
+        const emergencyLocationData = {
+          exactAddress: `${position.latitude.toFixed(4)}, ${position.longitude.toFixed(4)}`,
+          formattedForAI: `coordinates ${position.latitude.toFixed(4)}, ${position.longitude.toFixed(4)}`
+        }
+        console.log('💥 Emergency fallback location data:', emergencyLocationData)
+        setDetailedLocation(emergencyLocationData)
+        setLocationError('Location extraction failed, using coordinates')
+      } finally {
+        setIsExtractingLocation(false)
+      }
     }
-    setMessages(prev => [...prev, newMessage])
-  }
 
-  const handleRecordingStart = useCallback(() => {
-    addMessage('user', 'Listening...', true)
-  }, [])
-
-  const handleRecordingStop = useCallback(() => {
-    // Remove the "Listening..." message
-    setMessages(prev => prev.filter(msg => msg.content !== 'Listening...'))
-    addMessage('user', '🎤 Voice message sent', true)
-  }, [])
-
-  const handleAudioData = useCallback((audioData: string) => {
-    console.log('Audio data received from recorder:', audioData.length)
-  }, [])
-
-  const handleSendText = () => {
-    if (!textInput.trim() || !isConnected) return
-
-    sendTextMessage(textInput)
-    addMessage('user', textInput)
-    setTextInput('')
-  }
+    extractLocationDetails()
+  }, [position, isExtractingLocation, detailedLocation, locationString])
 
   const handleStartStory = (storyId: string) => {
     console.log('Starting story:', storyId)
@@ -114,13 +136,6 @@ function VoicePageContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black flex flex-col">
-      {/* Error Banner */}
-      {errorMessage && (
-        <div className="bg-red-500/20 border-b border-red-500/30 px-4 py-2">
-          <p className="text-red-400 text-sm text-center">{errorMessage}</p>
-        </div>
-      )}
-
       {/* Header */}
       <header className="glass border-b border-white/10 p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -131,14 +146,23 @@ function VoicePageContent() {
                 <div className="flex items-center space-x-2 text-sm text-gray-400">
                   <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
                   <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
-                  {isProcessing && (
-                    <span className="text-blue-400">Processing...</span>
-                  )}
                 </div>
                 {locationString && (
                   <div className="flex items-center space-x-2 text-xs text-green-400">
                     <MapPin className="w-3 h-3" />
                     <span className="truncate max-w-48">{locationString}</span>
+                  </div>
+                )}
+                {isExtractingLocation && (
+                  <div className="flex items-center space-x-2 text-xs text-yellow-400">
+                    <div className="w-3 h-3 border border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Getting location details...</span>
+                  </div>
+                )}
+                {detailedLocation && !isExtractingLocation && (
+                  <div className="flex items-center space-x-2 text-xs text-blue-400">
+                    <div className="w-3 h-3 bg-blue-400 rounded-full" />
+                    <span>Location ready for AI</span>
                   </div>
                 )}
               </div>
@@ -179,117 +203,15 @@ function VoicePageContent() {
         </div>
       </header>
 
-      {/* Chat Area */}
-      <div className="flex-1 overflow-hidden flex flex-col max-w-4xl mx-auto w-full">
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          <AnimatePresence>
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-                className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`flex items-start space-x-3 max-w-[80%] ${
-                  message.type === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'
-                }`}>
-                  {/* Avatar */}
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    message.type === 'user' 
-                      ? 'bg-blue-500' 
-                      : 'bg-gradient-to-r from-purple-500 to-blue-500'
-                  }`}>
-                    {message.type === 'user' ? (
-                      <User className="w-4 h-4 text-white" />
-                    ) : (
-                      <Bot className="w-4 h-4 text-white" />
-                    )}
-                  </div>
-
-                  {/* Message */}
-                  <div className={`glass rounded-2xl px-4 py-3 ${
-                    message.type === 'user'
-                      ? 'bg-blue-500/20 border-blue-500/30'
-                      : 'bg-white/5 border-white/10'
-                  }`}>
-                    <p className="text-white whitespace-pre-wrap">
-                      {message.content}
-                    </p>
-                    <span className="text-xs text-gray-400 mt-1 block">
-                      {message.timestamp.toLocaleTimeString()}
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-
-          {isProcessing && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex justify-start"
-            >
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-white" />
-                </div>
-                <div className="glass rounded-2xl px-4 py-3 bg-white/5 border-white/10">
-                  <div className="flex space-x-2">
-                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" />
-                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Audio Recorder */}
-        <div className="flex justify-center py-4">
-          <AudioRecorder
-            onRecordingStart={handleRecordingStart}
-            onRecordingStop={handleRecordingStop}
-            onAudioData={handleAudioData}
-          />
-        </div>
-
-        {/* Input Area */}
-        <div className="glass border-t border-white/10 p-4">
-          <div className="flex items-center space-x-4">
-            {/* Text Input */}
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendText()}
-                placeholder="Type your message or use voice..."
-                className="w-full bg-white/5 border border-white/20 rounded-full px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-              />
-              <Button
-                onClick={handleSendText}
-                disabled={!textInput.trim() || !isConnected}
-                variant="ghost"
-                size="icon"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
-            </div>
-
-          </div>
-
-          <p className="text-xs text-gray-400 text-center mt-2">
-            Use voice recording above or type to chat • Powered by Gemini Live API
-          </p>
-        </div>
+      {/* Main Content */}
+      <div className="flex-1 container mx-auto p-4">
+        <AudioShare 
+          locationData={detailedLocation}
+          isLocationReady={!!detailedLocation && !isExtractingLocation}
+          locationError={locationError}
+        />
       </div>
+     
 
       {/* Modals */}
       <Bookmarks 
@@ -306,7 +228,7 @@ function VoicePageContent() {
 }
 
 export default function VoicePage() {
-  const { user, isLoaded, isSignedIn } = useUser()
+  const { isLoaded, isSignedIn } = useUser()
   const router = useRouter()
 
   // Redirect if not signed in
@@ -323,13 +245,7 @@ export default function VoicePage() {
   }
 
   return (
-    <WebSocketProvider
-      serverUrl={process.env.NEXT_PUBLIC_BACKEND_URL || 'ws://localhost:9084'}
-      userId={user?.id}
-      onTextMessage={(text) => console.log('Text message:', text)}
-      onAudioMessage={(audio) => console.log('Audio message:', audio.length)}
-      onError={(error) => console.error('WebSocket error:', error)}
-    >
+    <WebSocketProvider url="ws://localhost:9084">
       <VoicePageContent />
     </WebSocketProvider>
   )

@@ -8,6 +8,7 @@ export declare class MemoryService {
     constructor(configService: AppConfigService);
     getUserId(sessionId: string): string;
     addToMemory(messages: ConversationMessage[], userId: string, metadata?: any): Promise<string | null>;
+    addToMemoryAsync(messages: ConversationMessage[], userId: string, metadata?: any): void;
     queryMemory(query: string, userId: string): Promise<MemoryResult[]>;
     getMemoryQueryTool(): {
         function_declarations: {

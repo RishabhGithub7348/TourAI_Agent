@@ -40,6 +40,27 @@ export class MemoryService {
     }
   }
 
+  // Async memory addition without waiting for completion (fire-and-forget)
+  addToMemoryAsync(
+    messages: ConversationMessage[],
+    userId: string,
+    metadata?: any,
+  ): void {
+    const defaultMetadata = { category: 'tour_session' };
+    const finalMetadata = metadata || defaultMetadata;
+
+    this.logger.log(`Adding to memory async: ${JSON.stringify(messages)}, user_id: ${userId}`);
+    
+    // Fire and forget - don't await the result
+    this.memory.add(messages, { user_id: userId })
+      .then(result => {
+        this.logger.log(`Async memory added: ${JSON.stringify(result)}`);
+      })
+      .catch(error => {
+        this.logger.error(`Error in async memory addition: ${error.message}`);
+      });
+  }
+
   async queryMemory(query: string, userId: string): Promise<MemoryResult[]> {
     try {
       const response = await this.memory.search(query, { user_id: userId });
