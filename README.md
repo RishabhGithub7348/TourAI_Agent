@@ -33,7 +33,6 @@ tour/
 
 **Frontend:**
 - Next.js 15 with App Router
-- React 19 with TypeScript
 - Three.js for 3D visualizations
 - Tailwind CSS for styling
 - Clerk for authentication
