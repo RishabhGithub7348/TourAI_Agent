@@ -23,7 +23,7 @@ A sophisticated AI-powered tour guide application that provides real-time travel
 
 ```
 tour/
-├── frontend/          # Next.js 15 React application
+├── frontend/          # Next.js 15 application
 ├── backend/           # NestJS WebSocket server
 ├── docker-compose.yml # Docker orchestration
 └── README.md         # This file
