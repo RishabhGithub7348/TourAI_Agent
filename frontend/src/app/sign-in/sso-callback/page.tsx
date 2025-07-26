@@ -8,7 +8,6 @@ export default function SSOCallback() {
         <p className="text-white">Completing sign in...</p>
       </div>
       <AuthenticateWithRedirectCallback 
-        continueSignInUrl="/voice"
         afterSignInUrl="/voice"
       />
     </div>

@@ -23,7 +23,11 @@
       "WebSearch(*)",
       "WebFetch(*)",
       "Bash(ls:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(rd:*)",
+      "Bash(timeout 30 npm run build)",
+      "Bash(npm start)",
+      "Bash(timeout 10 npm run dev)"
     ],
     "deny": []
   }

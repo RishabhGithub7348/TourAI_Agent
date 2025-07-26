@@ -12,12 +12,10 @@
 
 # testing
 /coverage
+.jest-cache/
 
-# next.js
-/.next/
-/out/
-
-# production
+# NestJS build output
+/dist
 /build
 
 # misc
@@ -33,9 +31,45 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# logs
+logs
+*.log
+
+# runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# optional npm cache directory
+.npm
+
+# optional eslint cache
+.eslintcache
+
+# webpack
+.webpack/
+
+# parcel cache
+.cache
+.parcel-cache
+
+# temporary folders
+tmp/
+temp/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# Optional stylelint cache
+.stylelintcache

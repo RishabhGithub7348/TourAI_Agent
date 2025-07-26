@@ -28,6 +28,7 @@ function VoicePageContent() {
   const router = useRouter()
 
   // Location state management
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [detailedLocation, setDetailedLocation] = useState<any>(null)
   const [isExtractingLocation, setIsExtractingLocation] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
@@ -166,6 +167,18 @@ function VoicePageContent() {
     }
   }, [playbackAudioLevel])
 
+  // Debug logging for location data passed to AudioShare
+  useEffect(() => {
+    if (detailedLocation) {
+      console.log('🏠 VoicePage - Passing locationData to AudioShare:', {
+        city: detailedLocation.city,
+        state: detailedLocation.state,
+        country: detailedLocation.country,
+        fullObject: detailedLocation
+      });
+    }
+  }, [detailedLocation]);
+
   const handleStartStory = (storyId: string) => {
     console.log('Starting story:', storyId)
     setIsStoryModeOpen(false)
@@ -267,17 +280,6 @@ function VoicePageContent() {
             onSpeakingStateChange={setIsUserSpeaking}
           />
           
-          {/* Debug Console Output */}
-          {detailedLocation && (
-            <div style={{ display: 'none' }}>
-              {console.log('🏠 VoicePage - Passing locationData to AudioShare:', {
-                city: detailedLocation.city,
-                state: detailedLocation.state,
-                country: detailedLocation.country,
-                fullObject: detailedLocation
-              })}
-            </div>
-          )}
         </div>
       </div>
 
@@ -313,7 +315,7 @@ export default function VoicePage() {
   }
 
   return (
-    <WebSocketProvider url="ws://localhost:9084" userId={user?.id}>
+    <WebSocketProvider url={process.env.NEXT_PUBLIC_BACKEND_URL || "ws://localhost:9084"} userId={user?.id}>
       <VoicePageContent />
     </WebSocketProvider>
   )

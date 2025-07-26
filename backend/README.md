@@ -1,43 +1,80 @@
-# Enhanced Tour Guide Voice Agent with Google Gemini Live API
+# TourGuide AI Backend
 
-A powerful NestJS-based voice-to-voice tour guide AI agent using Google Gemini Live API with comprehensive tools and long-term memory capabilities.
+NestJS-based WebSocket server providing real-time AI tour guide services with Google Gemini Live API integration, location services, and intelligent bookmark management.
 
-## Features
+## 🏗️ Architecture
 
-### 🎙️ Voice & Communication
-- Real-time voice conversation with Google Gemini Live API
-- WebSocket-based communication for real-time audio streaming
-- Audio transcription and processing
-- Text and voice response support
+The backend serves as a WebSocket gateway that orchestrates multiple AI and location services:
 
-### 🧠 Intelligence & Memory
-- Long-term conversation memory using mem0ai cloud API
-- Personalized recommendations based on user history
-- Context-aware responses that remember past interactions
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│  Frontend WS    │◄──►│   Voice Gateway  │◄──►│  Gemini Live    │
+│  Connection     │    │                  │    │  API            │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌──────────────────┐
+                       │  Service Layer   │
+                       │  • Gemini        │
+                       │  • Pinecone      │
+                       │  • Tools         │
+                       │  • Maps          │
+                       └──────────────────┘
+                              │
+                              ▼
+                       ┌──────────────────┐
+                       │  External APIs   │
+                       │  • Pinecone      │
+                       │  • Google Maps   │
+                       │  • OpenAI        │
+                       │  • Google Search │
+                       └──────────────────┘
+```
 
-### 🔧 Powerful Tools Integration
-- **Google Search**: Real-time web search for current information
-- **Code Execution**: Python code execution for calculations and data analysis
-- **Custom Tour Guide Tools**:
-  - Weather information for any location
-  - Nearby attractions and points of interest
-  - Turn-by-turn directions with multiple transport modes
-  - Restaurant and dining recommendations
-  - Transportation options comparison
+## 🚀 Features
 
-### 🌍 Tour Guide Capabilities
-- Comprehensive destination information
-- Cultural insights and historical facts
-- Budget calculations and currency conversion
-- Itinerary planning and optimization
-- Safety tips and accessibility information
+- **Real-time Voice Processing**: WebSocket-based audio streaming
+- **Google Gemini Live**: Advanced AI conversation capabilities
+- **Location Intelligence**: Google Maps API integration with smart city detection
+- **Vector Memory**: Pinecone-powered semantic bookmark storage
+- **Tool Integration**: Google Search for real-time information
+- **Multi-language Support**: BCP-47 language code support
+- **File Fallback**: Local JSON storage when vector DB is unavailable
 
-## Prerequisites
+## 📁 Project Structure
+
+```
+src/
+├── gateways/
+│   └── voice.gateway.ts         # WebSocket gateway for voice communication
+├── services/
+│   ├── gemini.service.ts        # Google Gemini Live API integration
+│   ├── pinecone.service.ts      # Vector database operations
+│   ├── tools.service.ts         # Google Search tool integration
+│   └── maps.service.ts          # Google Maps API service
+├── interfaces/
+│   └── conversation.interface.ts # TypeScript interfaces
+└── main.ts                      # Application bootstrap
+```
+
+## 🛠️ Tech Stack
+
+- **Framework**: NestJS 11.x
+- **WebSocket**: Socket.io 4.8
+- **AI**: Google Gemini Live API
+- **Vector DB**: Pinecone Database
+- **Embeddings**: OpenAI text-embedding-3-small
+- **Maps**: Google Maps Geocoding API
+- **Search**: Google Custom Search API
+- **Audio**: WAV file processing
+
+## ⚙️ Prerequisites
 
 - Node.js (v18 or higher)
-- Google AI API key (for Gemini Live API + Google Search)
+- Google AI API key (for Gemini Live API)
 - Google Maps API key (for Places, Directions, Geocoding)
-- Mem0 AI API key (for memory)
+- Pinecone API key (for vector database)
+- OpenAI API key (for embeddings)
 
 ## Setup
 
@@ -46,129 +83,191 @@ A powerful NestJS-based voice-to-voice tour guide AI agent using Google Gemini L
    npm install
    ```
 
-2. **Set up environment variables:**
-   Create a `.env` file in the root directory:
+2. **Environment setup**
+   ```bash
+   cp .env.example .env
+   ```
+   
+   Configure your `.env` file:
    ```env
-   GOOGLE_API_KEY=your_google_ai_api_key_here
-   GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
-   MEM0_API_KEY=your_mem0_api_key_here
-   WEBSOCKET_PORT=9084
+   # Google APIs
+   GOOGLE_API_KEY=your_google_gemini_api_key
+   GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+   
+   # Vector Database
+   PINECONE_API_KEY=your_pinecone_api_key
+   PINECONE_ENVIRONMENT=us-east-1-aws
+   PINECONE_INDEX_NAME=tour-bookmarks
+   
+   # OpenAI
+   OPENAI_API_KEY=your_openai_api_key
+   
+   # Server Configuration
+   PORT=9084
    ```
 
 3. **Get API Keys:**
    - **Google AI API Key**: Get from [Google AI Studio](https://aistudio.google.com/app/apikey)
-     - This provides access to both Gemini Live API and Google Search
    - **Google Maps API Key**: Get from [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
      - Enable: Places API, Directions API, Geocoding API
-   - **Mem0 AI API Key**: Get from [Mem0 Platform](https://app.mem0.ai/)
+   - **Pinecone API Key**: Get from [Pinecone Console](https://app.pinecone.io/)
+   - **OpenAI API Key**: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
 
-4. **Build and start the application:**
-   ```bash
-   # Development mode
-   npm run start:dev
+## 🚀 Development
 
-   # Production build
-   npm run build
-   npm run start:prod
-   ```
+### Available Scripts
 
-## WebSocket API
+```bash
+# Development with hot reload
+npm run start:dev
 
-The application runs a WebSocket server on port 9084 (configurable via environment).
+# Production build
+npm run build
 
-### Connection
+# Start production server
+npm run start:prod
 
-Connect to `ws://localhost:9084`
+# Run tests
+npm run test
 
-### Message Types
+# Format code
+npm run format
+```
 
-1. **Setup Configuration:**
-   ```json
-   {
-     "setup": {
-       "system_instruction": "Custom system instruction",
-       "tools": []
-     }
-   }
-   ```
+### Development Server
 
-2. **Real-time Audio Input:**
-   ```json
-   {
-     "realtime_input": {
-       "media_chunks": [
-         {
-           "mime_type": "audio/pcm",
-           "data": "base64_encoded_audio_data"
-         }
-       ]
-     }
-   }
-   ```
-
-3. **Text Input:**
-   ```json
-   {
-     "text": "Your message here"
-   }
-   ```
-
-### Events Received
-
-- `connected`: Connection established with session info
-- `setup_complete`: Configuration completed
-- `text`: Text response from the assistant
-- `audio`: Base64-encoded audio response
-- `error`: Error messages
-
-## Architecture
-
-- **VoiceGateway**: WebSocket gateway handling real-time communication
-- **GeminiService**: Integration with Google Gemini Live API + multi-tool support
-- **MemoryService**: Long-term conversation memory using mem0ai cloud API
-- **ToolsService**: Custom tour guide tools and function handling
-- **AudioUtils**: Audio processing utilities for PCM to WAV conversion
-
-## Tools & Capabilities
-
-### Built-in Tools
-1. **Google Search** - Real-time web search for current information (including weather)
-2. **Code Execution** - Python code execution for complex calculations
-3. **Memory System** - Long-term conversation memory using mem0ai cloud API
-
-### Real-Time Custom Tour Guide Tools
-1. **Nearby Attractions** - `get_nearby_attractions(location, radius)` - Google Places API
-2. **Directions** - `get_directions(from, to, mode)` - Google Directions API
-3. **Dining Recommendations** - `get_dining_recommendations(location, cuisine?)` - Google Places API
-4. **Transportation Options** - `get_transportation_options(from, to)` - Google Directions API
-
-### Example Real-Time Conversations
-- *"What's the weather like in Paris today?"* → Real weather data via Google Search
-- *"Find tourist attractions near the Eiffel Tower"* → Live Google Places data with ratings
-- *"How do I get from Times Square to Central Park by subway?"* → Real Google Transit directions
-- *"Find Italian restaurants near the Colosseum"* → Live restaurant data with ratings and hours
-- *"Calculate travel costs for 3 days in Tokyo"* → Code execution for complex calculations
-- *"Search for current events in London this weekend"* → Google Search integration
-
-## Error Handling
-
-- WebSocket exception filter for graceful error handling
-- Comprehensive logging throughout the application
-- Automatic session cleanup on disconnect
-
-## Development
-
-Run in development mode with hot reload:
 ```bash
 npm run start:dev
 ```
 
-## Client Integration
+Server will start on `http://localhost:9084` with WebSocket support.
 
-This backend is designed to work with frontend clients that can:
-- Establish WebSocket connections
-- Send/receive real-time audio data (PCM format)
-- Handle base64-encoded audio responses
-- Display text transcriptions and responses
+## 🌐 API Endpoints
 
-The original Python reference implementation shows the expected client behavior and message formats.
+### WebSocket Events
+
+#### Client → Server
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `join-room` | `{ userId: string, locationData: object }` | Join conversation room |
+| `voice-chunk` | `{ audioData: Buffer, isFinal: boolean }` | Send audio chunk |
+| `bookmark-save` | `{ content: string, type: string }` | Save bookmark |
+| `bookmark-get` | `{ query?: string }` | Retrieve bookmarks |
+| `language-change` | `{ language: string }` | Change conversation language |
+
+#### Server → Client
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `transcription` | `{ text: string, sender: string, finished: boolean }` | Real-time transcription |
+| `voice-response` | `{ audioData: Buffer }` | AI voice response |
+| `bookmark-saved` | `{ success: boolean, id?: string }` | Bookmark save confirmation |
+| `bookmarks-list` | `{ bookmarks: object[] }` | Retrieved bookmarks |
+| `error` | `{ message: string, code?: string }` | Error notification |
+
+## 🧩 Services
+
+### GeminiService
+
+Handles Google Gemini Live API integration:
+
+```typescript
+// Key methods
+startLiveSession(userId: string, language: string): Promise<void>
+sendAudioChunk(userId: string, audioData: Buffer): Promise<void>
+endSession(userId: string): Promise<void>
+```
+
+**Features:**
+- Real-time audio streaming
+- Tool calling for search and maps
+- Multi-language support
+- Context-aware responses
+
+### PineconeService
+
+Vector database operations for intelligent bookmarks:
+
+```typescript
+// Key methods
+saveBookmark(userId: string, content: string, type: string): Promise<string>
+searchBookmarks(userId: string, query: string): Promise<object[]>
+getUserBookmarks(userId: string): Promise<object[]>
+```
+
+**Features:**
+- Semantic search using OpenAI embeddings
+- User-scoped bookmark storage
+- File-based fallback system
+- Vector similarity matching
+
+### MapsService
+
+Google Maps API integration:
+
+```typescript
+// Key methods
+getExactLocationFromCoordinates(lat: number, lng: number): Promise<object>
+getNearbyPlaces(lat: number, lng: number, radius: number): Promise<object[]>
+searchPlaces(query: string): Promise<object[]>
+```
+
+**Features:**
+- Smart city detection (handles neighborhoods)
+- Nearby attractions discovery
+- Reverse geocoding
+- Place search functionality
+
+### ToolsService
+
+Google Search integration for real-time information:
+
+```typescript
+// Key methods
+searchGoogle(query: string): Promise<object[]>
+formatSearchResults(results: object[]): string
+```
+
+**Features:**
+- Real-time web search
+- Travel-focused result filtering
+- Context-aware search queries
+
+## 🐳 Docker
+
+### Development
+
+```bash
+# Build image
+docker build -t tour-backend .
+
+# Run container
+docker run -p 9084:9084 --env-file .env tour-backend
+```
+
+### Production
+
+The Dockerfile uses multi-stage builds for optimization:
+
+```dockerfile
+# Dependencies stage
+FROM node:18-alpine AS builder
+# ... build process
+
+# Production stage  
+FROM node:18-alpine AS production
+# ... optimized runtime
+```
+
+## 🔐 Security
+
+- **API Key Protection**: All sensitive keys stored in environment variables
+- **CORS Configuration**: Restricted to frontend domain
+- **Input Validation**: Sanitized user inputs
+- **Rate Limiting**: WebSocket connection limits
+- **Non-root Container**: Docker security best practices
+
+---
+
+For main project documentation, see the [root README](../README.md).
